@@ -41,6 +41,8 @@ export interface Config {
   scrollPasses: number;
   /** Block images/fonts/media — we only need the text-bearing DOM. */
   blockResources: boolean;
+  /** Add human-like pacing (post-load pause, mouse moves, jittered scroll). */
+  humanize: boolean;
   /** Retry a failed render (else mark terminal). */
   retryOnFailure: boolean;
 }
@@ -57,6 +59,7 @@ export function loadConfig(): Config {
     settleMs: Math.max(0, num("RENDER_SETTLE_MS", 500)),
     scrollPasses: Math.max(0, num("RENDER_SCROLL_PASSES", 3)),
     blockResources: bool("RENDER_BLOCK_RESOURCES", true),
+    humanize: bool("RENDER_HUMANIZE", true),
     retryOnFailure: bool("RENDER_RETRY_ON_FAILURE", true),
   };
 }

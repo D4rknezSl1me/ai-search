@@ -29,6 +29,53 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-07-09 — Phase 3: browser fingerprint hardening + human-like pacing
+
+**What**
+- New `browser-worker/src/fingerprint.ts` — the fingerprint half of the anti-detection stack
+  (docs/04 §5). It replaces the renderer's ad-hoc, *internally inconsistent* rotation (a spoofed
+  `Chrome/126` UA with no client hints, missing `window.chrome`, empty plugins, a SwiftShader WebGL
+  renderer) with one **coherent identity per render**. `buildIdentity()` (pure, no Playwright import)
+  picks an OS profile (Windows/macOS/Linux), a region (locale + timezone + Accept-Language paired:
+  en-US→America/\*, en-GB→Europe/London), a Chrome major version with its real GREASE brand, viewport,
+  and hardware, then derives the UA string, the matching `Sec-CH-UA`/`-platform`/`-mobile` headers,
+  and a `stealthInit` script that patches every remaining tell to agree with that identity:
+  `navigator.webdriver`, `languages`, `platform`, `hardwareConcurrency`, `deviceMemory`,
+  `navigator.userAgentData` (+ `getHighEntropyValues`), `window.chrome`, non-empty `plugins`, WebGL
+  `UNMASKED_VENDOR/RENDERER` (masks the software rasterizer), and the `permissions.query`↔
+  `Notification.permission` contradiction.
+- `renderer.ts` now builds one identity per job → `contextOptions(id)` for `newContext` +
+  `addInitScript(stealthInit, stealthPayload(id))`. Added **human-like pacing** (gated by
+  `RENDER_HUMANIZE`, default on): a jittered post-load pause, a couple of stepped mouse moves, and
+  jittered scroll-step dwell (replacing the fixed 300ms cadence) so a render isn't a dead-still,
+  zero-interaction fetch with an identical timing signature.
+- Test tooling: `node --test` unit tests (`fingerprint.test.ts`) driven by an injectable RNG, a
+  `test` npm script + `tsconfig.test.json` (production build excludes `*.test.ts`; `dist-test/`
+  git/docker-ignored). New `RENDER_HUMANIZE` in `.env.example`.
+
+**Why**
+- The last open Phase 3 item is the anti-detection stack (fingerprints, proxies, sessions, pacing).
+  The prior lightweight rotation actually *created* headless tells: the classic giveaway is a
+  **mismatch** (UA says Chrome 126 but Chromium sends its own real `Sec-CH-UA`; UA says Windows but
+  `navigator.platform` reads the container's Linux; WebGL reads SwiftShader), not any single value.
+  Deriving every surface from one identity makes the fingerprint self-consistent, which is what
+  matters for recall against JS/social targets that gate on bot detection.
+
+**Verification**
+- `npm run typecheck` clean and all 4 unit tests green in a `node:20` container (identity
+  consistency across 500 random draws: UA↔client-hint version, `navigator.platform`↔UA token↔
+  CH-Platform, locale↔timezone, no software-rasterizer WebGL; client-hint mapping; GREASE parsing;
+  RNG determinism). Production `npm run build` clean — `dist/` ships `fingerprint.js`, not the test.
+- **Real-browser check** (Playwright v1.49.1 image, live Chromium): applied a built identity and read
+  back the values a detector probes — `webdriver:false`, `platform:Win32` matching a Windows UA,
+  `languages:[en-GB,en]`, `plugins:3`, `window.chrome` present, `hardwareConcurrency/deviceMemory`
+  as chosen, `userAgentData.brands` with the GREASE brand filtered + `getHighEntropyValues`
+  returning `platform:Windows`/`uaFullVersion:124.0.0.0`, WebGL vendor/renderer = Intel (not
+  SwiftShader), notifications `prompt`. Confirmed the **outgoing request to example.com** carried the
+  spoofed `user-agent` + `sec-ch-ua` + `sec-ch-ua-platform` — no field contradicted another.
+
+---
+
 ## 2026-07-09 — Phase 3: freshness cadence for tracked social entities
 
 **What**

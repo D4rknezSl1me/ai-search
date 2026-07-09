@@ -73,7 +73,14 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
   long-lived Chromium that claims jobs, renders with a real browser (fresh isolated context per job,
   rotated viewport/locale/UA, lazy-load auto-scroll), and POSTs the resolved DOM to the ingest
   endpoint; verified live rendering a real Wikipedia SPA into the index.
-- [ ] Anti-detection stack (fingerprints, proxies, sessions, pacing).
+- [~] Anti-detection stack (fingerprints, proxies, sessions, pacing). **Fingerprints +
+  pacing done**: each render draws one internally-consistent identity (`browser-worker/src/fingerprint.ts`)
+  — OS profile, region (locale+timezone+Accept-Language), Chrome version, hardware — and derives the
+  UA, matching `Sec-CH-UA` client hints, and a stealth init-script (webdriver, `window.chrome`,
+  `navigator.userAgentData`/high-entropy hints, plugins, WebGL vendor/renderer, `permissions.query`)
+  from that single source, plus human-like pacing (post-load pause, mouse moves, jittered scroll).
+  Verified in a real Chromium (no field contradicts another; outgoing headers carry the spoofed UA +
+  client hints). **Remaining: proxy pool + authenticated session/cookie persistence.**
 - [~] Social adapters, easy/open first (Reddit, Mastodon, Telegram public, YouTube transcripts),
   then hostile platforms. **Mastodon + Hacker News + Lemmy adapters done** (three credential-free
   open APIs — the ≥3-adapter exit bar is met on the ingestion side); Reddit/Telegram need
@@ -94,8 +101,9 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
 
 **Exit criteria:** JS pages render & index ✅; ≥3 social adapters ingesting with health
 monitoring ✅; freshness cadence for tracked entities ✅. **Remaining P3 item:** the
-anti-detection stack (fingerprints, proxies, sessions, pacing) — the browser-worker ships a
-lightweight version today; the full stack is the last open Phase 3 task.
+anti-detection stack — **fingerprints + pacing are done** (coherent per-render identity + client
+hints + stealth patches + human-like pacing, verified in a real browser); the **proxy pool and
+authenticated session/cookie persistence** are the last open Phase 3 tasks.
 
 ## Phase 4 — Scale & quality
 

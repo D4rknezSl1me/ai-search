@@ -1,11 +1,12 @@
 // Headless Chromium renderer. Owns one long-lived browser; each job runs in its
 // own fresh context (isolated cookies/storage) so sessions never bleed between
-// targets. Anti-detection here is deliberately lightweight (docs/04 §5) — the
-// full fingerprint/proxy stack is a later Phase 3 task; this covers the basics
-// that stop trivial headless detection.
+// targets. Anti-detection is the fingerprint half of docs/04 §5: every context
+// gets one internally-consistent identity (see fingerprint.ts) plus human-like
+// pacing. Proxies/authenticated sessions remain a later Phase 3 task.
 
-import { type Browser, type BrowserContext, chromium } from "playwright";
+import { type Browser, type BrowserContext, type Page, chromium } from "playwright";
 import type { Config } from "./config.js";
+import { buildIdentity, contextOptions, stealthInit, stealthPayload } from "./fingerprint.js";
 
 export interface RenderOutput {
   html: string;
@@ -13,23 +14,13 @@ export interface RenderOutput {
   status: number;
 }
 
-// Small rotation pools so successive contexts don't look identical. Kept modest
-// and realistic rather than exotic.
-const VIEWPORTS = [
-  { width: 1366, height: 768 },
-  { width: 1440, height: 900 },
-  { width: 1536, height: 864 },
-  { width: 1920, height: 1080 },
-];
-const LOCALES = ["en-US", "en-GB"];
-const TIMEZONES = ["America/New_York", "Europe/London", "America/Chicago"];
-const UA_CHROME_VERSIONS = ["124.0.0.0", "125.0.0.0", "126.0.0.0"];
-
-function pick<T>(arr: T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
 const BLOCKED_RESOURCE_TYPES = new Set(["image", "media", "font"]);
+
+// Random integer in [min, max] — used to jitter human-like pauses so successive
+// renders never share an identical timing signature.
+function jitter(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
 
 export class Renderer {
   private browser: Browser | null = null;
@@ -55,20 +46,14 @@ export class Renderer {
 
   async render(url: string): Promise<RenderOutput> {
     if (!this.browser) throw new Error("renderer not started");
-    const uaVersion = pick(UA_CHROME_VERSIONS);
-    const context: BrowserContext = await this.browser.newContext({
-      viewport: pick(VIEWPORTS),
-      locale: pick(LOCALES),
-      timezoneId: pick(TIMEZONES),
-      userAgent:
-        `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ` +
-        `(KHTML, like Gecko) Chrome/${uaVersion} Safari/537.36`,
-    });
 
-    // navigator.webdriver === true is the canonical headless giveaway.
-    await context.addInitScript(() => {
-      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
-    });
+    // One coherent identity for this job; derive the context options and the
+    // matching stealth patches from it so nothing contradicts anything else.
+    const identity = buildIdentity();
+    const context: BrowserContext = await this.browser.newContext(
+      contextOptions(identity),
+    );
+    await context.addInitScript(stealthInit, stealthPayload(identity));
 
     if (this.cfg.blockResources) {
       await context.route("**/*", (route) => {
@@ -85,6 +70,13 @@ export class Renderer {
         waitUntil: this.cfg.waitUntil,
         timeout: this.cfg.navTimeoutMs,
       });
+
+      // Human-like pacing: a brief post-load pause and a small mouse move so the
+      // session isn't a dead-still, zero-interaction fetch. Behavioural tells are
+      // cheap to add and gated off (RENDER_HUMANIZE=false) when latency matters.
+      if (this.cfg.humanize) {
+        await this.humanize(page);
+      }
 
       // Trigger lazy/infinite content, then let late hydration settle.
       await this.autoScroll(page);
@@ -103,16 +95,28 @@ export class Renderer {
     }
   }
 
+  // A short randomized settle plus a couple of mouse moves — enough to register
+  // as "some interaction" without materially slowing the render.
+  private async humanize(page: Page): Promise<void> {
+    await page.waitForTimeout(jitter(120, 450));
+    const { width, height } = page.viewportSize() ?? { width: 1366, height: 768 };
+    for (let i = 0; i < 2; i++) {
+      await page.mouse.move(jitter(0, width), jitter(0, height), { steps: jitter(3, 8) });
+      await page.waitForTimeout(jitter(40, 160));
+    }
+  }
+
   // Scroll to the bottom in steps to fire IntersectionObserver-driven loaders,
   // capped by scrollPasses so a genuinely infinite feed can't hang the render.
-  private async autoScroll(page: import("playwright").Page): Promise<void> {
+  private async autoScroll(page: Page): Promise<void> {
     for (let i = 0; i < this.cfg.scrollPasses; i++) {
       const grew = await page.evaluate(() => {
         const before = document.body ? document.body.scrollHeight : 0;
         window.scrollTo(0, document.body ? document.body.scrollHeight : 0);
         return before;
       });
-      await page.waitForTimeout(300);
+      // Jittered dwell between scroll steps rather than a fixed 300ms cadence.
+      await page.waitForTimeout(jitter(220, 480));
       const after = await page.evaluate(() =>
         document.body ? document.body.scrollHeight : 0,
       );
