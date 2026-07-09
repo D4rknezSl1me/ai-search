@@ -72,6 +72,15 @@ Job/pipeline status; document metadata + provenance.
 ### `POST /internal/recrawl`
 Trigger recrawl for a campaign/host/URL set.
 
+### `GET /internal/social/adapters` · `GET /internal/social/adapters/{name}`
+Per-adapter social health (Phase 3; see [08-SOCIAL-MEDIA.md](08-SOCIAL-MEDIA.md) §8). The list
+form returns `{summary, adapters[]}`; `summary` aggregates `{adapters, enabled, disabled,
+fetches, errors, items}` and each entry carries `{adapter, enabled, fetches, errors, items,
+error_rate, last_error?, last_activity?}`. The `{name}` form returns a single adapter's snapshot
+(404 if unknown). `enabled=false` means the adapter auto-disabled after its error rate crossed
+the threshold over the minimum sample. Credential-free adapters registered today: `mastodon`,
+`hackernews`, `lemmy`.
+
 ### `GET /metrics`
 Prometheus exposition (all services).
 

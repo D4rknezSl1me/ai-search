@@ -67,8 +67,9 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
   owner-provided creds (will surface in `ralph/QUESTIONS.md`).
 - [~] Social normalization (threads, engagement, media urls); social fetch queue.
   `NormalizedDoc` + `Meta()` done (`crawler/internal/social`); scheduler routing/queue pending.
-- [~] Adapter health metrics + auto-disable + contract tests. `HealthTracker` + Prometheus
-  metrics + Mastodon contract tests done; per-adapter status endpoint pending.
+- [x] Adapter health metrics + auto-disable + contract tests. `HealthTracker` + Prometheus
+  metrics + contract tests + **per-adapter status endpoint** (`social.Registry` →
+  `GET /internal/social/adapters[/{name}]`) all done.
 
 **Exit criteria:** JS pages render & index; ≥3 social adapters ingesting with health monitoring;
 freshness cadence for tracked entities.

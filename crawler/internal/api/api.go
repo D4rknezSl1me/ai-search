@@ -11,17 +11,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/ai-search/crawler/internal/blob"
+	"github.com/ai-search/crawler/internal/social"
 	"github.com/ai-search/crawler/internal/store"
 	"github.com/ai-search/crawler/internal/urlx"
 )
 
 type Server struct {
-	store *store.Store
-	blob  *blob.Store
+	store  *store.Store
+	blob   *blob.Store
+	social *social.Registry
 }
 
-func NewServer(st *store.Store, bl *blob.Store) *Server {
-	return &Server{store: st, blob: bl}
+func NewServer(st *store.Store, bl *blob.Store, sr *social.Registry) *Server {
+	return &Server{store: st, blob: bl, social: sr}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -29,10 +31,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/healthz", s.healthz)
 	mux.HandleFunc("/readyz", s.readyz)
 	mux.Handle("/metrics", promhttp.Handler())
-	mux.HandleFunc("/internal/campaigns", s.createCampaign) // POST
-	mux.HandleFunc("/internal/frontier", s.frontier)        // GET ?campaign=ID
-	mux.HandleFunc("/internal/coverage", s.coverage)        // GET
-	mux.HandleFunc("/internal/documents/", s.document)      // GET /internal/documents/{id}
+	mux.HandleFunc("/internal/campaigns", s.createCampaign)       // POST
+	mux.HandleFunc("/internal/frontier", s.frontier)              // GET ?campaign=ID
+	mux.HandleFunc("/internal/coverage", s.coverage)              // GET
+	mux.HandleFunc("/internal/documents/", s.document)            // GET /internal/documents/{id}
+	mux.HandleFunc("/internal/social/adapters", s.socialAdapters) // GET (all)
+	mux.HandleFunc("/internal/social/adapters/", s.socialAdapter) // GET /.../{name}
 	return mux
 }
 
@@ -173,4 +177,41 @@ func (s *Server) document(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, doc)
+}
+
+// socialAdapters reports live health for every registered social adapter plus an
+// aggregate summary — the per-adapter monitoring surface for Phase 3 (docs/08
+// §8). Operators poll this to see which platforms are ingesting and whether any
+// auto-disabled on error rate.
+func (s *Server) socialAdapters(w http.ResponseWriter, _ *http.Request) {
+	if s.social == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"summary": social.Summary{}, "adapters": []social.Health{},
+		})
+		return
+	}
+	statuses := s.social.Statuses()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"summary":  social.Summarize(statuses),
+		"adapters": statuses,
+	})
+}
+
+// socialAdapter reports one adapter's health by name.
+func (s *Server) socialAdapter(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/internal/social/adapters/")
+	if name == "" {
+		s.socialAdapters(w, r)
+		return
+	}
+	if s.social == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "adapter not found"})
+		return
+	}
+	status, ok := s.social.Status(name)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "adapter not found: " + name})
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
 }

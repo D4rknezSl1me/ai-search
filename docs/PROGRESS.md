@@ -22,6 +22,53 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-07-09 — Phase 3: social adapter registry + per-adapter status endpoint
+
+**What**
+- New `crawler/internal/social/registry.go` — a `Registry` that holds the wired-up adapters by
+  name in registration order and exposes live health without reaching into each adapter:
+  `Register`, `Get`, `Names`, `Status(name)`, `Statuses()`. Re-registering a name is last-write-
+  wins but **keeps the adapter's original position** so listings stay stable across a hot-swap.
+  Added `Summary` + `Summarize()` — an aggregate fold (`adapters/enabled/disabled/fetches/
+  errors/items`) so a caller gets an "is anything wrong" signal without folding the list itself.
+  `DefaultRegistry(userAgent, timeout, pageLimit)` preloads the three credential-free adapters
+  (Mastodon, Hacker News, Lemmy).
+- Wired into the control API (`crawler/internal/api/api.go`): `NewServer` now takes the registry;
+  `GET /internal/social/adapters` returns `{summary, adapters[]}` and
+  `GET /internal/social/adapters/{name}` returns one snapshot (404 if unknown; empty-name path
+  falls through to the full list; nil-registry path is defensive and non-panicking).
+- Wired into `crawler/main.go`: builds `social.DefaultRegistry` from config (user-agent + fetch
+  timeout) and logs the registered adapter names at startup. This is the **first place the social
+  adapters are actually instantiated in the running binary** — previously they existed only as a
+  package + tests.
+- Closes the last open item under Phase 3's "adapter health metrics + auto-disable + contract
+  tests" (the per-adapter status endpoint), completing the health-monitoring half of the exit
+  criteria on the ingestion side.
+
+**Why**
+- Phase 3 exit criteria require "≥3 social adapters ingesting **with health monitoring**." The
+  counters + auto-disable + Prometheus metrics existed, but there was no operator-facing surface
+  to see which platforms are live and whether any auto-disabled — this endpoint provides it, and
+  instantiating the registry in `main` means the adapters are now part of the running service,
+  not just library code.
+
+**Verification** (golang:1.25-alpine container; no local toolchain, `go mod tidy` at build time)
+- `go vet ./...` clean; `go build ./...` clean; `gofmt` clean on all changed files.
+- New `registry_test.go` (5 tests) PASS: registration order preserved; re-register keeps position
+  and replaces the adapter; unknown `Status`/`Get` report `ok=false`; `Statuses` + `Summarize`
+  reflect a healthy vs an auto-disabled (100%% error rate) adapter with correct aggregate totals;
+  `DefaultRegistry` has exactly the three named adapters, all fresh/enabled with zero counters.
+- New `api/social_test.go` (5 tests, via `httptest`) PASS: list endpoint returns 3 adapters +
+  summary; by-name returns the mastodon snapshot; unknown name → 404; trailing-slash empty name
+  lists all; nil-registry list path returns 200 without panicking. store/blob are nil in these
+  tests since the social handlers don't touch them.
+
+**Status:** Phase 3 in progress — 3 credential-free adapters **with a live health/status endpoint
+and Prometheus metrics**; the Playwright browser path (JS render) and scheduler/queue routing
+remain for the JS half of the exit criteria.
+
+---
+
 ## 2026-07-09 — Phase 3: Lemmy adapter (third credential-free source; ≥3-adapter bar met)
 
 **What**

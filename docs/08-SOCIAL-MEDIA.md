@@ -95,6 +95,12 @@ Social content maps to the same `Document`/`Chunk` model with extra fields in `m
 - Per-adapter: success rate, block/challenge rate, items/hour, freshness lag, breakage alerts.
 - Automatic disable + alert when an adapter's error rate crosses a threshold (fail loud, don't
   silently under-collect).
+- **Live status endpoint (implemented):** the crawler registers adapters in a `social.Registry`
+  and exposes `GET /internal/social/adapters` (all, with an aggregate `summary`) and
+  `GET /internal/social/adapters/{name}` (one). Each snapshot reports `enabled`, `fetches`,
+  `errors`, `items`, `error_rate`, `last_error`, `last_activity`; `enabled=false` reflects the
+  auto-disable above. Counters also feed the `crawler_social_{fetch,items}_total` Prometheus
+  metrics. Contract described in [13-API.md](13-API.md) §2.
 
 ## 9. Maintenance expectation
 

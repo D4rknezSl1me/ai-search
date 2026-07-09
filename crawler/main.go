@@ -19,6 +19,7 @@ import (
 	"github.com/ai-search/crawler/internal/config"
 	"github.com/ai-search/crawler/internal/crawl"
 	"github.com/ai-search/crawler/internal/fetch"
+	"github.com/ai-search/crawler/internal/social"
 	"github.com/ai-search/crawler/internal/store"
 )
 
@@ -53,10 +54,16 @@ func main() {
 	// Reaper: requeue URLs orphaned in FETCHING (worker died mid-fetch).
 	go runReaper(ctx, st, time.Duration(cfg.ReapAfterS)*time.Second)
 
+	// Social adapter registry (credential-free platforms). Exposed for health
+	// monitoring via the control API; login-walled adapters are added once the
+	// owner provides credentials (ralph/QUESTIONS.md).
+	socialReg := social.DefaultRegistry(cfg.UserAgent, time.Duration(cfg.FetchTimeout)*time.Second, 0)
+	log.Printf("social adapters registered: %v", socialReg.Names())
+
 	// HTTP control/health server.
 	srv := &http.Server{
 		Addr:              ":" + cfg.HealthPort,
-		Handler:           api.NewServer(st, bl).Handler(),
+		Handler:           api.NewServer(st, bl, socialReg).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
