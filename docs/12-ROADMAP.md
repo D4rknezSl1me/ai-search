@@ -59,8 +59,8 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
 
 **Goal:** cover dynamic and social content.
 
-- [~] Playwright browser-worker pool + static→browser escalation. **Escalation gate + durable
-  render queue + render-ingest boundary done.** Gate: `crawler/internal/render`
+- [x] Playwright browser-worker pool + static→browser escalation. **Done: escalation gate +
+  durable render queue + render-ingest boundary + the browser-worker process.** Gate: `crawler/internal/render`
   (`never|auto|always` policy + JS-app heuristics: sparse extracted text combined with SPA root
   markers / framework bundles / noscript prompts; wired into the scheduler, stamped into
   `documents.meta.needs_render` + `render_reasons`, counted via `crawler_render_escalations_total`).
@@ -69,9 +69,10 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
   `POST /internal/render/claim`, `POST /internal/render/complete`). Ingest: `POST
   /internal/render/ingest` lands a worker's rendered DOM in the documents + text-blob pipeline via
   the same `extract → blob → InsertDocument` path as a static fetch (`meta.rendered_by=browser`),
-  marking the job RENDERED. The remaining piece is the actual Playwright worker *process* (a
-  separate-language service) that claims a job, renders with a real browser, and POSTs the resolved
-  DOM to the ingest endpoint.
+  marking the job RENDERED. Worker: `browser-worker/` (Node + Playwright, `app` profile) runs a
+  long-lived Chromium that claims jobs, renders with a real browser (fresh isolated context per job,
+  rotated viewport/locale/UA, lazy-load auto-scroll), and POSTs the resolved DOM to the ingest
+  endpoint; verified live rendering a real Wikipedia SPA into the index.
 - [ ] Anti-detection stack (fingerprints, proxies, sessions, pacing).
 - [~] Social adapters, easy/open first (Reddit, Mastodon, Telegram public, YouTube transcripts),
   then hostile platforms. **Mastodon + Hacker News + Lemmy adapters done** (three credential-free

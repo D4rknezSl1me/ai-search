@@ -1,0 +1,23 @@
+{
+  "name": "ai-search-browser-worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright headless-render worker: claims render_queue jobs from the crawler, renders JS-heavy pages, and POSTs the resolved DOM back for indexing.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node dist/index.js",
+    "dev": "node --loader ts-node/esm src/index.ts"
+  },
+  "dependencies": {
+    "playwright": "1.49.1"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "@types/node": "20.14.0"
+  }
+}

@@ -165,6 +165,21 @@ services:
       opensearch: { condition: service_healthy }
     restart: unless-stopped
 
+  # Headless-browser render worker (Phase 3). Consumes the crawler's render_queue
+  # over the control API: claim → render (Playwright/Chromium) → POST resolved DOM
+  # to /internal/render/ingest. Expensive (CPU/RAM) so it runs at low concurrency.
+  browser-worker:
+    profiles: ["app"]
+    build:
+      context: ../browser-worker
+    env_file: ../.env
+    environment:
+      CRAWLER_URL: "http://crawler:8090"
+    ports: ["${WORKER_HEALTH_PORT:-8091}:8091"]
+    depends_on:
+      crawler: { condition: service_started }
+    restart: unless-stopped
+
   # ============================================================ gpu profile ==
   # Both GPU services require the NVIDIA Container Toolkit on the host.
 

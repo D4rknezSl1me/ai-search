@@ -15,3 +15,8 @@ scrape_configs:
   - job_name: ai-api
     static_configs:
       - targets: ["ai-api:8000"]
+
+  # Playwright render worker (Phase 3) — browserworker_* render metrics.
+  - job_name: browser-worker
+    static_configs:
+      - targets: ["browser-worker:8091"]

@@ -19,13 +19,57 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   counts; prune stale chunks when a doc is re-chunked to fewer pieces.
 - [ ] **max_pages best-effort overshoot** — tighten the concurrent cap if it matters.
 - [ ] Non-HTML parsing (PDF/doc) and JS/social rendering are phase-tracked (Phase 3), not backlog.
-- [~] **Playwright browser-worker pool** — **render queue + render-ingest boundary done**
-  (2026-07-09, see entries below): the escalation gate enqueues flagged URLs into a durable
-  `render_queue` (claim/lease/retry + reaper), and `POST /internal/render/ingest` now lands a
-  worker's rendered DOM in the documents + text-blob pipeline (same extract path as a static
-  fetch) and marks the job RENDERED. The remaining piece is the actual headless-browser worker
-  *process* (a separate-language service, docs/02) that claims jobs, renders with a real browser,
-  and POSTs the resolved DOM to the ingest endpoint. Anti-detection stack rides on that.
+- [x] **Playwright browser-worker pool** — **done** (2026-07-09, see entries below): the
+  escalation gate enqueues flagged URLs into a durable `render_queue` (claim/lease/retry + reaper),
+  `POST /internal/render/ingest` lands a worker's rendered DOM in the documents + text-blob pipeline
+  (same extract path as a static fetch), and the `browser-worker/` Playwright service now closes the
+  loop — a long-lived Chromium claims jobs, renders JS-heavy pages, and POSTs the resolved DOM back
+  for indexing. Verified live (rendered a real Wikipedia SPA → indexed). Lightweight anti-detection
+  is in place; the full fingerprint/proxy stack remains a later Phase 3 refinement.
+
+---
+
+## 2026-07-09 — Phase 3: Playwright browser-worker (render queue consumer)
+
+**What**
+- New `browser-worker/` service — the headless-browser render pool that consumes the crawler's
+  `render_queue` over the control API. A single long-lived Chromium (`src/renderer.ts`) serves a
+  bounded pool of concurrent renders; the worker loop (`src/worker.ts`) does `claim → render →
+  ingest`, forever: it leases a batch from `POST /internal/render/claim`, renders each job in a
+  fresh isolated browser context, and POSTs the resolved DOM to `POST /internal/render/ingest`
+  (which runs the crawler's shared extract→chunk→index path). Empty/errored renders report a
+  retryable failure via `POST /internal/render/complete` so the crawler's cap/reaper reschedules.
+- Renderer basics: per-job fresh context (isolated cookies/storage), rotated
+  viewport/locale/timezone/UA pools, `navigator.webdriver` masking, `--disable-blink-features=
+  AutomationControlled`, image/font/media blocking, capped auto-scroll to fire lazy/infinite
+  loaders, then a settle delay for late hydration. Deliberately lightweight (docs/04 §5) — the
+  full fingerprint/proxy stack is a later Phase 3 task.
+- `src/crawlerClient.ts` mirrors the crawler contracts (`RenderJob`/`RenderItem`, the 422 empty
+  signal, the ingest result shape); `src/metrics.ts` exposes dependency-free Prometheus
+  `browserworker_*` counters/gauges (claimed/indexed/duplicate/empty/failed/inflight/claim_errors)
+  on a `/metrics` + `/healthz` HTTP server.
+- Wiring: `deploy/docker-compose.yml` adds the `browser-worker` service to the `app` profile
+  (Playwright base image, `CRAWLER_URL=http://crawler:8090`, health port 8091);
+  `deploy/prometheus.yml` scrapes it; `.env.example` documents the `RENDER_*` knobs.
+
+**Why**
+- This was the last open piece of Phase 3's browser half: the queue + ingest boundary existed but
+  had no process actually driving a real browser. Keeping the worker a thin renderer (all
+  extraction/indexing stays in the crawler) avoids a second, drifting copy of the pipeline.
+  Bias-to-recall: JS-locked content the static fetch can't see now reaches the index.
+
+**Verification**
+- `npm run build` (tsc, strict) clean in a `node:20-alpine` container → `dist/*.js` emitted.
+- `docker compose --profile app config` valid; `browser-worker` present in the `app` profile.
+- Contracts cross-checked against `crawler/internal/api` (claim/ingest/complete) and
+  `store.RenderItem` — fields, the 422 empty-render path, and the ingest result shape all match.
+- Live against the running stack: `browser-worker` container up, `/healthz` ok. It claimed and
+  rendered real pages — `https://en.wikipedia.org/wiki/Headless_browser` → `rendered → indexed`
+  (`text_len=7286`), example.com/.net → `duplicate`. Postgres confirms the row: `id=56`,
+  `meta.rendered_by=browser`, `text_len=7286`. Transient postgres restart mid-run surfaced as
+  `claim failed` warnings and self-recovered (the queue's lease/retry owns correctness). Metrics:
+  `browserworker_{claimed=3,rendered_indexed=1,rendered_duplicate=2}`. After a Prometheus config
+  reload the `browser-worker` scrape target reads `health=up`, `up=1`.
 
 ---
 
