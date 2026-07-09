@@ -37,6 +37,18 @@ var (
 		Help:    "Fetch latency.",
 		Buckets: prometheus.DefBuckets,
 	})
+
+	// --- social adapters (Phase 3) ---
+
+	SocialFetch = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "crawler_social_fetch_total",
+		Help: "Social adapter fetch attempts by adapter and outcome.",
+	}, []string{"adapter", "result"}) // ok | error
+
+	SocialItems = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "crawler_social_items_total",
+		Help: "Normalized social documents produced, by adapter.",
+	}, []string{"adapter"})
 )
 
 // StatusClass maps an HTTP status code to a coarse class label.

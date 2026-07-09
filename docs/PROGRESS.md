@@ -22,6 +22,47 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-07-09 — Phase 3: social adapter framework + Mastodon adapter
+
+**What**
+- New `crawler/internal/social` package — the per-platform adapter framework (docs/08 §2):
+  - `Adapter` interface (`Discover`/`Fetch`/`Parse`/`Paginate`/`Health`) and a `NormalizedDoc`
+    that maps a social post/comment onto the crawler's Document model, carrying the social
+    identity fields in `Meta()` (docs/08 §6: platform, post_id, author_handle, posted_at,
+    engagement, parent_id, media_urls, permalink). `ContentHash` is keyed by `platform+post_id`
+    (not text) so distinct posts with identical short text ("gm") stay distinct under the
+    `documents` unique-content_hash constraint; `simhash` still handles near-dups.
+  - `HealthTracker` — per-adapter fetch/error/item counters with an error-rate auto-disable
+    threshold + min-sample guard (docs/08 §8, "fail loud"); feeds Prometheus.
+  - **Mastodon adapter** (`mastodon.go`) — the credential-free first platform (open public API,
+    no auth): `Discover` (instance host → public timeline, API URLs passed through), `Fetch`
+    (HTTP + `Link: rel="next"` cursor extraction, 8 MiB cap), `Parse` (unwraps boosts to the
+    original, strips post HTML to text w/ entity decode, declared-or-detected language, drops
+    empty media-only posts), `Paginate` (max_id cursor).
+- New Prometheus metrics: `crawler_social_fetch_total{adapter,result}`,
+  `crawler_social_items_total{adapter}`.
+- Chose Mastodon first (over Reddit/Telegram) because it needs **no credentials** — building the
+  social path end-to-end without blocking on owner-provided API keys (Reddit OAuth, Telegram
+  MTProto id/hash will be logged to `ralph/QUESTIONS.md` when those adapters land).
+
+**Why**
+- Start Phase 3 (JS + social ingestion) with the highest-ROI, zero-credential source so the
+  normalization + health-monitoring scaffold is proven before the hostile platforms. Recall-first
+  (CLAUDE.md north star): social is the highest-value source.
+
+**Verification** (golang:1.25-alpine container; no local toolchain)
+- `go vet ./...` clean; `go build ./...` clean; `go test ./...` green.
+- New `internal/social` tests (5) all PASS: Mastodon parse contract (HTML→text + entity decode,
+  boost unwrap/dedupe, reply `parent_id`, federated handle, engagement, permalink, meta shape),
+  distinct content_hash per post, `Link` header `rel="next"` extraction, `Discover`, and
+  HealthTracker auto-disable (min-sample + threshold).
+
+**Status:** Phase 3 in progress — adapter framework + first (Mastodon) adapter parse/normalize
+proven offline. Next: wire the social fetch queue into the scheduler (route adapters through the
+frontier), then add Reddit/YouTube-transcript adapters (Reddit needs owner OAuth creds).
+
+---
+
 ## 2026-07-09 — Phase 2: Search / RAG API
 
 **What**

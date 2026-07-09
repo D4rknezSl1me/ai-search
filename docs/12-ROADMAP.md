@@ -55,16 +55,19 @@ persisted; crawl dashboard live; target throughput demonstrated on a sample.
 **Exit criteria (met):** end-to-end query → cited answer; recall@5/10 = 1.0, nDCG@10 = 0.91,
 citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation paths verified.
 
-## Phase 3 — JS + Social ingestion  ⬅️ next
+## Phase 3 — JS + Social ingestion  ⬅️ in progress
 
 **Goal:** cover dynamic and social content.
 
-- Playwright browser-worker pool + static→browser escalation.
-- Anti-detection stack (fingerprints, proxies, sessions, pacing).
-- Social adapters, easy/open first (Reddit, Mastodon, Telegram public, YouTube transcripts),
-  then hostile platforms.
-- Social normalization (threads, engagement, media urls); social fetch queue.
-- Adapter health metrics + auto-disable + contract tests.
+- [ ] Playwright browser-worker pool + static→browser escalation.
+- [ ] Anti-detection stack (fingerprints, proxies, sessions, pacing).
+- [~] Social adapters, easy/open first (Reddit, Mastodon, Telegram public, YouTube transcripts),
+  then hostile platforms. **Mastodon adapter done** (credential-free open API); Reddit/Telegram
+  need owner-provided creds (will surface in `ralph/QUESTIONS.md`).
+- [~] Social normalization (threads, engagement, media urls); social fetch queue.
+  `NormalizedDoc` + `Meta()` done (`crawler/internal/social`); scheduler routing/queue pending.
+- [~] Adapter health metrics + auto-disable + contract tests. `HealthTracker` + Prometheus
+  metrics + Mastodon contract tests done; per-adapter status endpoint pending.
 
 **Exit criteria:** JS pages render & index; ≥3 social adapters ingesting with health monitoring;
 freshness cadence for tracked entities.
