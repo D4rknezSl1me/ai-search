@@ -3,6 +3,15 @@
 Reverse-chronological record of meaningful changes. Update this on every meaningful change
 (see `CLAUDE.md` rule 3). Format: date · what · why · verification.
 
+## Backlog (deferred follow-ups — address in/around Phase 2)
+
+- [ ] **FETCHING reaper** — requeue frontier URLs stuck in `FETCHING` past a timeout (orphaned if
+  the crawler dies mid-fetch). Small SQL + a goroutine ticker in the crawler.
+- [ ] **Unit tests** — `urlx` canonicalization/scope and `simhash` distance (run via `go test`
+  in a Go container; no local toolchain).
+- [ ] **max_pages best-effort overshoot** — tighten the concurrent cap if it matters.
+- [ ] Non-HTML parsing (PDF/doc) and JS/social rendering are phase-tracked (Phase 3), not backlog.
+
 ---
 
 ## 2026-07-09 — Phase 1: Crawler MVP
