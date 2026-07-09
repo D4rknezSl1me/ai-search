@@ -35,3 +35,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Local agent-loop tooling (not part of the product; keep out of the tracked repo)
+/ralph/
