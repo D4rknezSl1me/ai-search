@@ -49,6 +49,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/internal/render/queue", s.renderQueue)       // GET ?campaign=ID
 	mux.HandleFunc("/internal/render/claim", s.renderClaim)       // POST {"n":N}
 	mux.HandleFunc("/internal/render/complete", s.renderComplete) // POST {"id":ID,"ok":bool}
+	mux.HandleFunc("/internal/render/ingest", s.renderIngest)     // POST {"id":ID,"url":...,"html":...}
 	return mux
 }
 

@@ -71,6 +71,11 @@ var (
 		Name: "crawler_render_queue_completed_total",
 		Help: "Render jobs completed, by outcome.",
 	}, []string{"result"}) // rendered | failed
+
+	RenderIngested = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "crawler_render_ingested_total",
+		Help: "Browser-rendered documents landed in the pipeline, by outcome.",
+	}, []string{"result"}) // indexed | duplicate | empty
 )
 
 // StatusClass maps an HTTP status code to a coarse class label.

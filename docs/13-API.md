@@ -105,6 +105,17 @@ campaign_id, reasons[], attempts}`. `complete` body `{id, ok, retry?}` records t
 retry cap (default `retry=true`) else `FAILED`. Jobs left un-completed past the reaper timeout
 are requeued from `RENDERING` back to `PENDING` (crash recovery, mirroring the frontier).
 
+### `POST /internal/render/ingest`
+Success path for the browser worker: submit a rendered page's DOM and land it in the same
+documents + text-blob pipeline as a static fetch. Body `{id, url, final_url?, status?, html}` —
+`id` is the claimed `render_queue` job (0 to ingest standalone without marking a job), `url` the
+canonical URL, `html` the resolved DOM (e.g. `document.documentElement.outerHTML`). The crawler
+runs the HTML through `extract → blob → InsertDocument` (`meta.rendered_by="browser"`) and marks
+the job `RENDERED`. Returns `{id, state:"RENDERED", inserted, text_len, lang, title}`; an already
+known page reports `inserted=false` (exact-dedup). A render with no extractable text returns `422`
+and leaves the job un-marked so the worker can retry. Counted via
+`crawler_render_ingested_total{result=indexed|duplicate|empty}`.
+
 ### `GET /metrics`
 Prometheus exposition (all services).
 

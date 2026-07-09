@@ -19,11 +19,49 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   counts; prune stale chunks when a doc is re-chunked to fewer pieces.
 - [ ] **max_pages best-effort overshoot** — tighten the concurrent cap if it matters.
 - [ ] Non-HTML parsing (PDF/doc) and JS/social rendering are phase-tracked (Phase 3), not backlog.
-- [~] **Playwright browser-worker pool** — **render queue done** (2026-07-09, see entry below):
-  the escalation gate now enqueues flagged URLs into a durable `render_queue` with claim/lease/retry
-  + reaper, exposed over the control API. The remaining piece is the actual headless-browser worker
-  process (a separate-language service) that claims jobs, re-fetches with a browser, and
-  re-extracts/re-indexes. Anti-detection stack rides on that.
+- [~] **Playwright browser-worker pool** — **render queue + render-ingest boundary done**
+  (2026-07-09, see entries below): the escalation gate enqueues flagged URLs into a durable
+  `render_queue` (claim/lease/retry + reaper), and `POST /internal/render/ingest` now lands a
+  worker's rendered DOM in the documents + text-blob pipeline (same extract path as a static
+  fetch) and marks the job RENDERED. The remaining piece is the actual headless-browser worker
+  *process* (a separate-language service, docs/02) that claims jobs, renders with a real browser,
+  and POSTs the resolved DOM to the ingest endpoint. Anti-detection stack rides on that.
+
+---
+
+## 2026-07-09 — Phase 3: render-ingest boundary (browser DOM → RAG pipeline)
+
+**What**
+- New `POST /internal/render/ingest` (`crawler/internal/api/renderingest.go`) — the crawler-owned
+  boundary a (separate-language, docs/02) Playwright worker POSTs to after rendering a claimed job:
+  `{id, url, final_url?, status?, html}`. The handler runs the rendered DOM through the **same**
+  `extract.FromHTML → blob.PutRaw/PutText → store.InsertDocument` path as a static fetch (so
+  rendered content is chunked/embedded identically), stamps `meta.rendered_by="browser"`, and marks
+  the `render_queue` job RENDERED. Deliberately does **not** re-run the escalation gate or link
+  discovery (the page is already rendered; outlinks belong to the static frontier that fed it).
+- Empty renders (no extractable text) return `422` and do **not** mark the job RENDERED, so the
+  worker retries rather than the queue silently swallowing a failed render.
+- New metric `crawler_render_ingested_total{result=indexed|duplicate|empty}`; reuses
+  `crawler_render_queue_completed_total{rendered}` + `crawler_documents_total`.
+- Previously `render/complete` only flipped job state — a claimed render had nowhere to land its
+  content. This closes that loop; `render/complete` now covers only the failure/no-content path.
+
+**Why**
+- Phase 3's browser half needs the rendered DOM to actually reach the index, not just a state flip.
+  Keeping extraction/indexing in one place (Go) means the browser worker stays a thin renderer
+  instead of a second, drifting copy of the pipeline — the same rationale as the `render_queue`
+  producer→consumer split. Bias-to-recall: JS-locked content the static fetch missed now lands.
+
+**Verification**
+- `go build ./...`, `go vet ./...`, `go test ./...` clean in a `golang:1.25-alpine` container.
+- Live end-to-end against the running stack (crawler rebuilt): created a `render_js=always` campaign
+  → static crawl escalated and enqueued example.com (`render_queue PENDING:1`); `claim {n:5}` leased
+  job id=7 (`RENDERING`); `POST /internal/render/ingest` with a rendered SPA DOM →
+  `{inserted:true, state:RENDERED, lang:en, text_len:475}` and queue → `RENDERED:1`; re-POST →
+  `{inserted:false}` (exact-dedup duplicate); empty-DOM POST → `422` (job untouched). Metrics:
+  `render_ingested{indexed=1,duplicate=1,empty=1}`, `render_queue_completed{rendered=2}`,
+  `documents_total +1`. Postgres confirmed the row: `id=50 url=https://example.com/ status=200`
+  `content_type=text/html lang=en meta.rendered_by=browser text_len=475` with a blob key set.
 
 ---
 
