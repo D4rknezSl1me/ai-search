@@ -50,6 +50,9 @@ type CampaignConfig struct {
 	MaxPages      int      `json:"max_pages"`
 	AllowExternal bool     `json:"allow_external"`
 	MinDelayMs    int      `json:"min_delay_ms"`
+	// RenderJS is the browser-escalation policy: never | auto | always.
+	// Empty is treated as auto. See internal/render.
+	RenderJS string `json:"render_js"`
 }
 
 // UpsertCampaign creates or updates a campaign by name and returns its id.

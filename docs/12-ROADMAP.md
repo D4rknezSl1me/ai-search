@@ -59,7 +59,11 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
 
 **Goal:** cover dynamic and social content.
 
-- [ ] Playwright browser-worker pool + static→browser escalation.
+- [~] Playwright browser-worker pool + static→browser escalation. **Escalation gate done**
+  (`crawler/internal/render` — `never|auto|always` policy + JS-app heuristics: sparse extracted
+  text combined with SPA root markers / framework bundles / noscript prompts; wired into the
+  scheduler, stamped into `documents.meta.needs_render` + `render_reasons`, counted via
+  `crawler_render_escalations_total`). The Playwright pool that consumes these flags is pending.
 - [ ] Anti-detection stack (fingerprints, proxies, sessions, pacing).
 - [~] Social adapters, easy/open first (Reddit, Mastodon, Telegram public, YouTube transcripts),
   then hostile platforms. **Mastodon + Hacker News + Lemmy adapters done** (three credential-free

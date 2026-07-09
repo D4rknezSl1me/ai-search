@@ -11,6 +11,7 @@ import (
 	"github.com/ai-search/crawler/internal/extract"
 	"github.com/ai-search/crawler/internal/fetch"
 	"github.com/ai-search/crawler/internal/metrics"
+	"github.com/ai-search/crawler/internal/render"
 	"github.com/ai-search/crawler/internal/store"
 	"github.com/ai-search/crawler/internal/urlx"
 )
@@ -163,7 +164,28 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 		}
 	}
 
+	// Escalation gate: decide whether this page's real content is locked behind
+	// JavaScript and should be re-fetched by the browser worker. Recorded in
+	// metrics + document meta now; the Playwright pool consumes it next.
+	decision := render.NeedsRender(render.ParseMode(cfg.RenderJS), res.Body, doc.Text, len(doc.Links))
+	if decision.Needs {
+		for _, r := range decision.Reasons {
+			metrics.RenderEscalations.WithLabelValues(r).Inc()
+		}
+	}
+
 	sourceID, _ := s.store.EnsureSource(ctx, item.Host)
+
+	meta := map[string]any{
+		"excerpt":   doc.Excerpt,
+		"site_name": doc.SiteName,
+		"text_len":  len(doc.Text),
+		"truncated": res.Truncated,
+	}
+	if decision.Needs {
+		meta["needs_render"] = true
+		meta["render_reasons"] = decision.Reasons
+	}
 
 	_, inserted, err := s.store.InsertDocument(ctx, &store.Document{
 		URL:         item.URL,
@@ -178,12 +200,7 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 		Lang:        doc.Lang,
 		FetchedAt:   time.Now().UTC(),
 		BlobKey:     blobKey,
-		Meta: map[string]any{
-			"excerpt":   doc.Excerpt,
-			"site_name": doc.SiteName,
-			"text_len":  len(doc.Text),
-			"truncated": res.Truncated,
-		},
+		Meta:        meta,
 	})
 	if err != nil {
 		log.Printf("insert document error: %v", err)

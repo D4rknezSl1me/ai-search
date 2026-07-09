@@ -19,6 +19,50 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   counts; prune stale chunks when a doc is re-chunked to fewer pieces.
 - [ ] **max_pages best-effort overshoot** — tighten the concurrent cap if it matters.
 - [ ] Non-HTML parsing (PDF/doc) and JS/social rendering are phase-tracked (Phase 3), not backlog.
+- [ ] **Playwright browser-worker pool** — consume `documents.meta.needs_render` (set by the
+  escalation gate below): a separate low-concurrency render queue that re-fetches flagged URLs
+  with a headless browser, then re-extracts/re-indexes. Anti-detection stack rides on this.
+
+---
+
+## 2026-07-09 — Phase 3: static→browser escalation gate
+
+**What**
+- New `crawler/internal/render` package — the decision layer at the front of the browser path.
+  `NeedsRender(mode, rawHTML, extractedText, linkCount)` returns whether a statically-fetched page
+  is really a JS-rendered shell that a headless browser must re-fetch.
+  - `Mode` (`never | auto | always`, parsed from the campaign's new `render_js` config field;
+    empty ⇒ auto). `never`/`always` short-circuit; `auto` applies heuristics.
+  - Auto heuristic is **recall-first but cost-aware**: it escalates only when the extracted text is
+    sparse (`<400` bytes) AND a positive JS-app signal is present — SPA root markers (`id="__next"`,
+    `id="root"`+`data-reactroot`, `ng-app`, Nuxt/Gatsby/Vue-SSR markers, `window.__INITIAL_STATE__`),
+    framework bundles (`_next/static`, `/static/js/`, `webpack`, …) on a link-starved page, a
+    `<noscript>` "enable JavaScript" prompt, or near-empty text (`<120` bytes) with any `<script>`.
+    A short but link-rich nav/index page with no JS signal stays on the static path.
+  - Returns the matched `Reasons` so the verdict is explainable in metrics and doc metadata.
+- Wired into `crawler/internal/crawl/scheduler.go`: after extraction, the scheduler computes the
+  decision using the campaign's `render_js` mode. On escalation it increments
+  `crawler_render_escalations_total{reason}` (new metric) and stamps `needs_render:true` +
+  `render_reasons:[…]` into the `documents.meta` JSON — the durable hand-off the future Playwright
+  pool will poll. Non-escalated pages are unchanged.
+- `store.CampaignConfig` gains `RenderJS string` (`render_js`), already documented in
+  `docs/04-CRAWLER.md`'s campaign schema.
+
+**Why**
+- Phase 3's JS half needs an entry point: the crawler must *know which* pages are worth the
+  expensive browser render before a pool exists to render them. This gate makes escalation
+  observable and durable end-to-end now (metrics + `needs_render` flags accumulating on real
+  crawls), so the browser-worker pool becomes a consumer of an already-proven signal rather than a
+  big-bang addition. Bias-to-recall (per `CLAUDE.md`) with a cost guard: we only pay for a browser
+  when static extraction genuinely came up empty against a JS-app shell.
+
+**Verification**
+- `go build ./...` + `go vet ./internal/render/...` clean in a `golang:1.25-alpine` container
+  (same toolchain as the crawler Dockerfile; `go mod tidy` resolves deps at build time).
+- `go test ./internal/render/...` → `ok` — 9 tests covering mode parsing/round-trip and the
+  heuristic: rich article stays static, Next.js shell / React root+bundle / noscript prompt all
+  escalate with the expected reasons, short-but-no-signal page stays static, and never/always
+  short-circuit correctly. `./internal/crawl` compiles against the new wiring.
 
 ---
 
