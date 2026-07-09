@@ -1,0 +1,8 @@
+{"query": "Where was Albert Einstein born and what did he work on?", "relevant_urls": ["https://quotes.toscrape.com/author/Albert-Einstein"], "notes": "author bio page"}
+{"query": "Jane Austen biography and date of birth", "relevant_urls": ["https://quotes.toscrape.com/author/Jane-Austen"], "notes": "author bio page"}
+{"query": "Thomas Edison on genius and perspiration", "relevant_urls": ["https://quotes.toscrape.com/author/Thomas-A-Edison", "https://quotes.toscrape.com/tag/edison/page/1/"], "notes": "edison"}
+{"query": "Who is J.K. Rowling?", "relevant_urls": ["https://quotes.toscrape.com/author/J-K-Rowling"], "notes": "author bio page"}
+{"query": "quotes about love", "relevant_urls": ["https://quotes.toscrape.com/tag/love/page/1/"], "notes": "love tag"}
+{"query": "quotes about books and reading", "relevant_urls": ["https://quotes.toscrape.com/tag/books/page/1/", "https://quotes.toscrape.com/tag/reading/"], "notes": "books/reading tags"}
+{"query": "Marilyn Monroe quotes about imperfection", "relevant_urls": ["https://quotes.toscrape.com/author/Marilyn-Monroe"], "notes": "author bio page"}
+{"query": "quotes about friendship", "relevant_urls": ["https://quotes.toscrape.com/tag/friendship/", "https://quotes.toscrape.com/tag/friends/"], "notes": "friendship tags"}
