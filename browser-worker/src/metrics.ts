@@ -53,6 +53,9 @@ export const metrics = {
   failed: new Counter("browserworker_render_failed_total", "Renders that errored (navigation/timeout/etc)."),
   inflight: new Gauge("browserworker_inflight", "Pages currently being rendered."),
   claimErrors: new Counter("browserworker_claim_errors_total", "Failed claim calls against the crawler."),
+  sessionCreated: new Counter("browserworker_session_created_total", "New per-host sessions minted (no prior state)."),
+  sessionResumed: new Counter("browserworker_session_resumed_total", "Renders that resumed an existing per-host session."),
+  sessionRotated: new Counter("browserworker_session_rotated_total", "Sessions rotated after exceeding their TTL."),
 };
 
 export function renderMetrics(): string {
@@ -64,6 +67,9 @@ export function renderMetrics(): string {
     metrics.failed,
     metrics.inflight,
     metrics.claimErrors,
+    metrics.sessionCreated,
+    metrics.sessionResumed,
+    metrics.sessionRotated,
   ]
     .map((m) => m.render())
     .join("\n");

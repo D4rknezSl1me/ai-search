@@ -74,13 +74,18 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
   rotated viewport/locale/UA, lazy-load auto-scroll), and POSTs the resolved DOM to the ingest
   endpoint; verified live rendering a real Wikipedia SPA into the index.
 - [~] Anti-detection stack (fingerprints, proxies, sessions, pacing). **Fingerprints +
-  pacing done**: each render draws one internally-consistent identity (`browser-worker/src/fingerprint.ts`)
+  pacing + sessions done**: each render draws one internally-consistent identity (`browser-worker/src/fingerprint.ts`)
   — OS profile, region (locale+timezone+Accept-Language), Chrome version, hardware — and derives the
   UA, matching `Sec-CH-UA` client hints, and a stealth init-script (webdriver, `window.chrome`,
   `navigator.userAgentData`/high-entropy hints, plugins, WebGL vendor/renderer, `permissions.query`)
   from that single source, plus human-like pacing (post-load pause, mouse moves, jittered scroll).
   Verified in a real Chromium (no field contradicts another; outgoing headers carry the spoofed UA +
-  client hints). **Remaining: proxy pool + authenticated session/cookie persistence.**
+  client hints). **Session/cookie persistence done** (`browser-worker/src/sessions.ts`): a per-host
+  store pins one coherent identity + its accumulated `storageState` (cookies + localStorage),
+  persisted to the `sessionsdata` volume so warm/authenticated sessions survive restarts; return
+  visits resume the same identity + jar, same-host renders are serialized (no jar race), and
+  sessions rotate past a TTL. Verified end-to-end in a real Chromium (a cookie set on the first
+  render is replayed on the return visit) and by unit tests. **Remaining: proxy pool.**
 - [~] Social adapters, easy/open first (Reddit, Mastodon, Telegram public, YouTube transcripts),
   then hostile platforms. **Mastodon + Hacker News + Lemmy adapters done** (three credential-free
   open APIs — the ≥3-adapter exit bar is met on the ingestion side); Reddit/Telegram need
@@ -101,9 +106,10 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
 
 **Exit criteria:** JS pages render & index ✅; ≥3 social adapters ingesting with health
 monitoring ✅; freshness cadence for tracked entities ✅. **Remaining P3 item:** the
-anti-detection stack — **fingerprints + pacing are done** (coherent per-render identity + client
-hints + stealth patches + human-like pacing, verified in a real browser); the **proxy pool and
-authenticated session/cookie persistence** are the last open Phase 3 tasks.
+anti-detection stack — **fingerprints + pacing + session/cookie persistence are done** (coherent
+per-render identity + client hints + stealth patches + human-like pacing + per-host pinned identity
+and persisted cookie jar, all verified in a real browser); the **proxy pool** is the last open
+Phase 3 task.
 
 ## Phase 4 — Scale & quality
 

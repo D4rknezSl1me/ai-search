@@ -1,12 +1,17 @@
 // Headless Chromium renderer. Owns one long-lived browser; each job runs in its
-// own fresh context (isolated cookies/storage) so sessions never bleed between
-// targets. Anti-detection is the fingerprint half of docs/04 §5: every context
-// gets one internally-consistent identity (see fingerprint.ts) plus human-like
-// pacing. Proxies/authenticated sessions remain a later Phase 3 task.
+// own context so sessions never bleed between *targets* (contexts are keyed and
+// isolated per host). Anti-detection is the fingerprint half of docs/04 §5: every
+// context gets one internally-consistent identity (see fingerprint.ts) plus
+// human-like pacing. When sessions are enabled, that identity and the cookie jar
+// are pinned per host and persisted (see sessions.ts) so return visits resume a
+// warm, coherent session — the substrate authenticated targets need. Proxies
+// remain the last open Phase 3 task.
 
 import { type Browser, type BrowserContext, type Page, chromium } from "playwright";
 import type { Config } from "./config.js";
 import { buildIdentity, contextOptions, stealthInit, stealthPayload } from "./fingerprint.js";
+import { metrics } from "./metrics.js";
+import { SessionStore, type SessionHandle, type StorageState } from "./sessions.js";
 
 export interface RenderOutput {
   html: string;
@@ -24,8 +29,13 @@ function jitter(min: number, max: number): number {
 
 export class Renderer {
   private browser: Browser | null = null;
+  private readonly sessions: SessionStore | null;
 
-  constructor(private readonly cfg: Config) {}
+  constructor(private readonly cfg: Config) {
+    this.sessions = cfg.sessions
+      ? new SessionStore({ dir: cfg.sessionDir, ttlMs: cfg.sessionTtlMs })
+      : null;
+  }
 
   async start(): Promise<void> {
     this.browser = await chromium.launch({
@@ -47,12 +57,20 @@ export class Renderer {
   async render(url: string): Promise<RenderOutput> {
     if (!this.browser) throw new Error("renderer not started");
 
-    // One coherent identity for this job; derive the context options and the
-    // matching stealth patches from it so nothing contradicts anything else.
-    const identity = buildIdentity();
-    const context: BrowserContext = await this.browser.newContext(
-      contextOptions(identity),
-    );
+    // Resolve the identity + cookie jar for this render. With sessions on, both
+    // are pinned per host and resumed from prior visits; off, we mint a fresh
+    // coherent identity with an empty jar (the original per-job behaviour).
+    const handle = this.sessions ? await this.sessions.acquire(url) : null;
+    if (handle) this.recordSession(handle);
+    const identity = handle ? handle.identity : buildIdentity();
+    const seedState = handle ? handle.storageState : undefined;
+
+    const context: BrowserContext = await this.browser.newContext({
+      ...contextOptions(identity),
+      // storageState seeds cookies + localStorage so the site sees a returning
+      // browser. Empty ⇒ a clean first visit.
+      ...(seedState ? { storageState: seedState as never } : {}),
+    });
     await context.addInitScript(stealthInit, stealthPayload(identity));
 
     if (this.cfg.blockResources) {
@@ -85,14 +103,30 @@ export class Renderer {
       }
 
       const html = await page.content();
+      // Persist the cookie jar as the site left it, so the next visit resumes it.
+      if (handle) {
+        const nextState = (await context.storageState()) as unknown as StorageState;
+        await handle.release(nextState);
+      }
       return {
         html,
         finalURL: page.url() || url,
         status: response?.status() ?? 0,
       };
+    } catch (err) {
+      // Failed render: unlock the host without persisting a half-baked jar.
+      if (handle) await handle.release();
+      throw err;
     } finally {
       await context.close();
     }
+  }
+
+  // Translate a leased session's origin into the corresponding metric.
+  private recordSession(handle: SessionHandle): void {
+    if (handle.origin === "created") metrics.sessionCreated.inc();
+    else if (handle.origin === "rotated") metrics.sessionRotated.inc();
+    else metrics.sessionResumed.inc();
   }
 
   // A short randomized settle plus a couple of mouse moves — enough to register

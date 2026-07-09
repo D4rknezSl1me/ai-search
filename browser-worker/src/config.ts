@@ -45,6 +45,12 @@ export interface Config {
   humanize: boolean;
   /** Retry a failed render (else mark terminal). */
   retryOnFailure: boolean;
+  /** Persist & reuse one identity + cookie jar per host across renders. */
+  sessions: boolean;
+  /** Directory for persisted session state (mounted volume). */
+  sessionDir: string;
+  /** Rotate a host's identity + jar once it is older than this (ms). */
+  sessionTtlMs: number;
 }
 
 export function loadConfig(): Config {
@@ -61,5 +67,9 @@ export function loadConfig(): Config {
     blockResources: bool("RENDER_BLOCK_RESOURCES", true),
     humanize: bool("RENDER_HUMANIZE", true),
     retryOnFailure: bool("RENDER_RETRY_ON_FAILURE", true),
+    sessions: bool("RENDER_SESSIONS", true),
+    sessionDir: str("RENDER_SESSION_DIR", "/data/sessions"),
+    // Default: rotate a host's identity + cookie jar once a day.
+    sessionTtlMs: Math.max(0, num("RENDER_SESSION_TTL_MS", 86_400_000)),
   };
 }

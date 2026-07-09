@@ -528,6 +528,52 @@ frontier), then add Reddit/YouTube-transcript adapters (Reddit needs owner OAuth
 
 ---
 
+## 2026-07-09 — Phase 3: per-host session/cookie persistence (anti-detection)
+
+**What**
+- New `browser-worker/src/sessions.ts` — a `SessionStore` that gives the render pool coherent,
+  reusable sessions instead of a cold fresh context per job:
+  - **Per-host key** (`SessionStore.keyFor` = lowercased hostname). Coherent within a site,
+    isolated across sites (sessions never bleed between targets).
+  - **Pinned identity + persisted cookie jar.** Each host keeps ONE `Identity` (from
+    `fingerprint.ts`) plus its accumulated Playwright `storageState` (cookies + localStorage).
+    Return visits resume both — presenting a fresh fingerprint to a warm cookie jar is itself a
+    tell, so identity is pinned to the jar.
+  - **Disk-durable** via atomic write-then-rename to a mounted volume (`sessionsdata`), so
+    warm/authenticated sessions survive worker restarts. Memory-only fallback when no dir is set;
+    disk errors are non-fatal (logged, render continues).
+  - **Per-key async lock** serializes same-host renders so two contexts can't race one cookie jar
+    (also more human — one session, one activity stream); different hosts still render in parallel.
+  - **TTL rotation** (`RENDER_SESSION_TTL_MS`, default 24h): past the TTL a host gets a new
+    identity + empty jar, so no identity/jar pair becomes a permanent tracking signal.
+- Wired into `renderer.ts`: seeds `newContext({ storageState })` from the session, persists the
+  post-render jar back via `handle.release(state)`; failed renders release without persisting a
+  half-baked jar. Gated by `RENDER_SESSIONS` (default on).
+- Config knobs (`config.ts`) + `.env.example`; three Prometheus counters
+  (`browserworker_session_{created,resumed,rotated}_total`) in `metrics.ts`.
+- `deploy/docker-compose.yml`: `sessionsdata` volume mounted at `/data/sessions` on browser-worker.
+- Fixed `npm test` to glob `dist-test/**/*.test.js` (it was running the whole dir, which booted
+  `index.js`/the Worker and bound port 8091).
+
+**Why**
+- Advances the Phase 3 anti-detection stack: session/cookie reuse cuts re-auth/challenge frequency
+  and is the substrate authenticated targets need (an injected login cookie lands in this jar and
+  is reused). Recall-first: fewer challenges → more reachable content.
+
+**Verification**
+- `npm run typecheck` clean; **`npm test` green — 11/11** (7 new session tests: host keying,
+  first-visit empty jar, resume-with-pinned-identity, cross-host isolation, disk round-trip across
+  a fresh store, same-host serialization, TTL rotation).
+- **End-to-end in a real Chromium**: a local server sets `sid=abc123` on the first render; the
+  second render of the same host **replayed the cookie** (`hit=2 cookie=sid=abc123`) — proving the
+  jar persisted to disk and re-seeded the new context. First render correctly sent no cookie.
+- `docker compose --profile app config` valid with the new volume/mount.
+
+**Status:** Phase 3 anti-detection: fingerprints + pacing + session/cookie persistence done.
+**Last open Phase 3 task: proxy pool.**
+
+---
+
 ## 2026-07-09 — Phase 2: Search / RAG API
 
 **What**

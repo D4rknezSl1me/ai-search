@@ -111,7 +111,8 @@ docker run --rm --network ai-search_default -v "$PWD/ai/eval:/eval" -w /eval \
   local-LLM synthesis, eval harness)
 - [~] Phase 3 — JS + social fetching (in progress: Playwright browser-worker + escalation/render
   queue; 3 credential-free adapters — Mastodon, Hacker News, Lemmy — with health monitoring;
-  freshness cadence for tracked entities. Remaining: full anti-detection stack)
+  freshness cadence for tracked entities; anti-detection: coherent fingerprints + human-like
+  pacing + per-host session/cookie persistence. Remaining: proxy pool)
 - [ ] Phase 4 — Scale & quality
 - [ ] Phase 5 — Web UI
 

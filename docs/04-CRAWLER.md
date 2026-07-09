@@ -58,12 +58,21 @@ The frontier is the set of URLs to crawl, with ordering.
 
 For JS-rendered and social content ([08-SOCIAL-MEDIA.md](08-SOCIAL-MEDIA.md)).
 
-- Pool of headless Chromium contexts; each context isolated (cookies/storage) for session mgmt.
+- Pool of headless Chromium contexts; each context keyed and isolated **per host** for session
+  mgmt — coherent within a site, never bleeding across sites.
 - Wait strategies: network-idle, selector-present, scroll-to-load (infinite scroll), timeouts.
 - Anti-detection: stealth plugin, randomized viewport/UA/timezone/locale, human-like delays,
   WebGL/canvas noise, disable automation flags.
 - Resource blocking (images/fonts/ads) when only text is needed → faster, cheaper.
 - Session/cookie persistence for authenticated targets (credentials injected from config/secret).
+  **Implemented** (`browser-worker/src/sessions.ts`): a per-host store pins ONE coherent identity
+  plus its accumulated Playwright `storageState` (cookies + localStorage), persisted to a mounted
+  volume so warm sessions survive worker restarts. Return visits resume the same identity + jar
+  (presenting a fresh fingerprint to a warm cookie jar is itself a tell); same-host renders are
+  serialized through a per-key lock so two contexts can't race one jar; sessions rotate (new
+  identity + empty jar) past a configurable TTL so no pair becomes a permanent tracking signal.
+  An injected login cookie for a host simply lands in this jar and is reused thereafter — the
+  substrate authenticated targets need. Metrics: `browserworker_session_{created,resumed,rotated}_total`.
 - Screenshot/DOM capture for audit.
 - Browser workers are **expensive** (CPU/RAM) → separate queue, lower concurrency, only for URLs
   that require it.
@@ -86,7 +95,7 @@ worker) are requeued by the same reaper that guards the frontier. The worker *pr
 | Proxy pool rotation (datacenter → residential later) | Distribute IPs, bypass IP bans/geo |
 | Request pacing & jitter | Mimic human timing |
 | Browser fingerprint mitigation | Defeat JS-based bot detection |
-| Session/cookie reuse | Reduce re-auth and challenge frequency |
+| Session/cookie reuse ✅ | Reduce re-auth and challenge frequency (per-host pinned identity + persisted jar) |
 | CAPTCHA handling hooks | Pluggable solver integration (later) |
 | Backoff on soft-blocks | Detect block pages/redirects and cool down |
 
