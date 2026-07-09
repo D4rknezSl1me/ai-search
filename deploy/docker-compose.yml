@@ -167,11 +167,40 @@ services:
   # Both GPU services require the NVIDIA Container Toolkit on the host.
 
   # Text Embeddings Inference — batched embeddings on the GPU.
+  # Image 1.8 adds newer-GPU (Blackwell/sm_120) kernels. The model is pre-staged
+  # into the teicache volume and HF_HUB_OFFLINE avoids TEI 1.x's broken handling
+  # of HuggingFace's relative download redirects.
   tei:
     profiles: ["gpu"]
-    image: ghcr.io/huggingface/text-embeddings-inference:1.5
+    image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:1.8}
     command: ["--model-id", "${EMBED_MODEL_ID}", "--port", "8080"]
+    environment:
+      - HF_HUB_OFFLINE=1
+      # Flash-attention kernels hang during warmup on sm_120 (Blackwell); the
+      # standard cuBLAS Bert path is robust. Drop when TEI ships Blackwell flash.
+      - USE_FLASH_ATTENTION=0
     ports: ["${TEI_PORT}:8080"]
+    volumes:
+      - teicache:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  # Cross-encoder re-ranker (bge-reranker-v2-m3) — served by TEI's /rerank.
+  # Optional: the RAG pipeline degrades to fused (RRF) order if it is absent.
+  reranker:
+    profiles: ["gpu"]
+    image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:1.8}
+    command: ["--model-id", "${RERANK_MODEL_ID:-BAAI/bge-reranker-v2-m3}", "--port", "8080"]
+    environment:
+      - HF_HUB_OFFLINE=1
+      - USE_FLASH_ATTENTION=0
+    ports: ["${RERANK_PORT:-8085}:8080"]
     volumes:
       - teicache:/data
     deploy:

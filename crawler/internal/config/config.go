@@ -24,6 +24,7 @@ type Config struct {
 	FetchTimeout int // seconds
 	MaxBodyBytes int64
 	UserAgent    string
+	ReapAfterS   int // requeue URLs stuck in FETCHING past this many seconds (0 = off)
 }
 
 func env(key, def string) string {
@@ -68,6 +69,7 @@ func Load() *Config {
 		FetchTimeout: envInt("CRAWLER_FETCH_TIMEOUT_S", 15),
 		MaxBodyBytes: int64(envInt("CRAWLER_MAX_BODY_BYTES", 5_000_000)),
 		UserAgent:    env("CRAWLER_USER_AGENT", "Mozilla/5.0 (compatible; ai-search/0.1)"),
+		ReapAfterS:   envInt("CRAWLER_REAP_AFTER_S", 300),
 	}
 }
 

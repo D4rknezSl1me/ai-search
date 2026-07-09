@@ -50,6 +50,9 @@ func main() {
 	go scheduler.Run(ctx)
 	log.Printf("crawl scheduler started with %d workers (min host delay %dms)", cfg.Workers, cfg.MinDelayMs)
 
+	// Reaper: requeue URLs orphaned in FETCHING (worker died mid-fetch).
+	go runReaper(ctx, st, time.Duration(cfg.ReapAfterS)*time.Second)
+
 	// HTTP control/health server.
 	srv := &http.Server{
 		Addr:              ":" + cfg.HealthPort,
@@ -72,4 +75,31 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+// runReaper periodically requeues URLs stuck in FETCHING beyond reapAfter. The
+// check interval is a fraction of the timeout so orphans are caught promptly.
+func runReaper(ctx context.Context, st *store.Store, reapAfter time.Duration) {
+	if reapAfter <= 0 {
+		return
+	}
+	interval := reapAfter / 2
+	if interval < 30*time.Second {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			n, err := st.RequeueStuckFetching(ctx, reapAfter, crawl.MaxAttempts)
+			if err != nil {
+				log.Printf("reaper error: %v", err)
+			} else if n > 0 {
+				log.Printf("reaper requeued %d stuck FETCHING url(s)", n)
+			}
+		}
+	}
 }

@@ -122,7 +122,7 @@ func (s *Store) AddURL(ctx context.Context, campaignID int64, canonURL string, u
 // LOCKED) and marks them FETCHING, so multiple workers never take the same URL.
 func (s *Store) ClaimNext(ctx context.Context, n int) ([]FrontierItem, error) {
 	rows, err := s.pool.Query(ctx, `
-		UPDATE frontier_urls f SET state = 'FETCHING'
+		UPDATE frontier_urls f SET state = 'FETCHING', claimed_at = now()
 		WHERE f.id IN (
 			SELECT id FROM frontier_urls
 			WHERE state = 'PENDING'
@@ -173,6 +173,27 @@ func (s *Store) MarkFailed(ctx context.Context, id int64, retry bool, maxAttempt
 	_, err := s.pool.Exec(ctx, `
 		UPDATE frontier_urls SET state = 'FAILED', attempts = attempts + 1 WHERE id = $1`, id)
 	return err
+}
+
+// RequeueStuckFetching returns URLs orphaned in FETCHING (e.g. the crawler died
+// mid-fetch) back to PENDING so they get retried, but only while under the retry
+// cap; those already at the cap are marked FAILED. Returns the number requeued.
+// Staleness is measured from claimed_at (set by ClaimNext), so URLs that are
+// legitimately mid-fetch are not disturbed.
+func (s *Store) RequeueStuckFetching(ctx context.Context, olderThan time.Duration, maxAttempts int) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE frontier_urls
+		SET state = CASE WHEN attempts + 1 >= $2 THEN 'FAILED' ELSE 'PENDING' END,
+		    attempts = attempts + 1,
+		    next_attempt = now()
+		WHERE state = 'FETCHING'
+		  AND claimed_at IS NOT NULL
+		  AND claimed_at < now() - $1::interval`,
+		olderThan.String(), maxAttempts)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 // FetchedCount returns how many URLs in a campaign have been fetched (for max_pages).

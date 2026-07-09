@@ -15,8 +15,8 @@ import (
 	"github.com/ai-search/crawler/internal/urlx"
 )
 
-// maxAttempts caps how many times a URL is retried before being marked FAILED.
-const maxAttempts = 3
+// MaxAttempts caps how many times a URL is retried before being marked FAILED.
+const MaxAttempts = 3
 
 type Scheduler struct {
 	store   *store.Store
@@ -110,7 +110,7 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 	if wait := s.limiter.Reserve(item.Host); wait > 0 {
 		select {
 		case <-ctx.Done():
-			_ = s.store.MarkFailed(ctx, item.ID, true, maxAttempts, time.Second)
+			_ = s.store.MarkFailed(ctx, item.ID, true, MaxAttempts, time.Second)
 			return
 		case <-time.After(wait):
 		}
@@ -130,7 +130,7 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 	if res.Status >= 400 {
 		metrics.FetchTotal.WithLabelValues("error").Inc()
 		retry := res.Status >= 500
-		_ = s.store.MarkFailed(ctx, item.ID, retry, maxAttempts, backoff(item))
+		_ = s.store.MarkFailed(ctx, item.ID, retry, MaxAttempts, backoff(item))
 		return
 	}
 
@@ -151,6 +151,16 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 	blobKey, err := s.blob.PutRaw(ctx, doc.ContentHash, res.Body)
 	if err != nil {
 		log.Printf("blob put error: %v", err)
+	}
+
+	// Persist the clean extracted text (idempotent, keyed by content hash) so
+	// the intelligence plane can chunk/embed it. Written for every extracted
+	// document — including re-crawls of already-known content — and NOT gated by
+	// the insert-dedup below, so text is available even for pre-existing rows.
+	if doc.Text != "" {
+		if _, err := s.blob.PutText(ctx, doc.ContentHash, doc.Text); err != nil {
+			log.Printf("blob put text error: %v", err)
+		}
 	}
 
 	sourceID, _ := s.store.EnsureSource(ctx, item.Host)
@@ -210,7 +220,7 @@ func (s *Scheduler) discover(ctx context.Context, item store.FrontierItem, cfg s
 }
 
 func (s *Scheduler) retryOrFail(ctx context.Context, item store.FrontierItem, reason string) {
-	_ = s.store.MarkFailed(ctx, item.ID, true, maxAttempts, backoff(item))
+	_ = s.store.MarkFailed(ctx, item.ID, true, MaxAttempts, backoff(item))
 }
 
 func backoff(item store.FrontierItem) time.Duration {

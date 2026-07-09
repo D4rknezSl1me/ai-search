@@ -61,7 +61,26 @@ func (s *Store) PutRaw(ctx context.Context, contentHash []byte, data []byte) (st
 	hexHash := hex.EncodeToString(contentHash)
 	now := time.Now().UTC()
 	key := fmt.Sprintf("raw/%04d/%02d/%02d/%s.gz", now.Year(), now.Month(), now.Day(), hexHash)
+	return s.putGzip(ctx, key, data)
+}
 
+// TextKey returns the deterministic object key for a document's clean extracted
+// text, derived from its content hash. Consumers (the indexer) reconstruct this
+// key from documents.content_hash — no separate column is needed.
+func TextKey(contentHash []byte) string {
+	return "text/" + hex.EncodeToString(contentHash) + ".txt.gz"
+}
+
+// PutText gzip-compresses and stores the clean extracted text under a stable,
+// content-hash-derived key. Written for every successfully extracted document
+// (ungated by insert dedup) so re-crawls backfill text for already-known docs.
+// This is what makes chunk/embed possible in the intelligence plane.
+func (s *Store) PutText(ctx context.Context, contentHash []byte, text string) (string, error) {
+	key := TextKey(contentHash)
+	return s.putGzip(ctx, key, []byte(text))
+}
+
+func (s *Store) putGzip(ctx context.Context, key string, data []byte) (string, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	if _, err := gz.Write(data); err != nil {
