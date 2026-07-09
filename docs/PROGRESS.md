@@ -22,6 +22,59 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-07-09 — Phase 3: Lemmy adapter (third credential-free source; ≥3-adapter bar met)
+
+**What**
+- New `crawler/internal/social/lemmy.go` — a third adapter on the Phase 3 framework, using
+  **Lemmy's public v3 REST API** (the fediverse's Reddit-shaped link-aggregator; public listings
+  need no auth, docs/08 §5):
+  - `Discover` handles three seed shapes: a **bare instance host** (`lemmy.ml`) → its
+    all-communities post listing; a **community reference** (`lemmy.ml/c/technology`, also as a
+    URL) → that community's listing (`community_name=technology`); a **full v3 API URL** →
+    passthrough (so a caller can also point at `/api/v3/comment/list` to ingest a thread).
+    Empty seeds error loudly.
+  - `Fetch` GETs a listing page (8 MiB cap, health recorded). Lemmy paginates by **page number**,
+    not a cursor header, so `Paginate` increments the target's `page` param and **stops when the
+    current page came back empty** (no endless blank-page fetching).
+  - `Parse` decodes the response envelope, handling **both** `posts` (PostView) and `comments`
+    (CommentView) so the same adapter ingests roots and threads. Post/comment ids live in
+    **separate integer spaces** on Lemmy, so `PostID` is namespaced (`post/<id>`, `comment/<id>`)
+    to keep the `platform+post_id` content hash collision-free and to let `ParentID` reference the
+    right ancestor. Comment threading is rebuilt from the **materialized `path`** (`0.<self>` →
+    parented to the post; `0.<ancestor>.<self>` → parented to the ancestor comment). Deleted/
+    removed/empty-text items are dropped; link-posts carry the external URL in `MediaURLs` and
+    `Text = title + body` (headline searchable, mirrors HN). A tolerant timestamp parser accepts
+    both RFC3339 and the timezone-less naive-UTC form some Lemmy versions emit.
+  - Reuses the framework's `htmlToText`, `resolveLang`, `makeTitle`, `firstNonEmpty`, and
+    `HealthTracker`; emits the existing `crawler_social_{fetch,items}_total{adapter="lemmy"}`
+    metrics — no new deps.
+- This is a **third distinct pipeline shape**: page-numbered listing pagination + a post/comment
+  envelope with nested creator/community/counts + Markdown bodies + path-based threading —
+  different from both Mastodon (one Link-cursor timeline page) and HN (id-array feed + per-item
+  fetch), further proving the adapter interface generalizes.
+
+**Why**
+- Meets Phase 3's **"≥3 social adapters ingesting"** exit criterion on the ingestion side with a
+  **zero-credential** source (no owner blocker), keeping breadth-first/recall-first momentum
+  (CLAUDE.md north star) while the login-walled platforms wait on owner creds. Lemmy adds
+  high-signal community discussion with full comment threads.
+
+**Verification** (golang:1.25-alpine container; no local toolchain, `go mod tidy` at build time)
+- `go vet ./...` clean; `go build ./...` clean; full `go test ./internal/social/` green.
+- New `lemmy_test.go` (5 tests) all PASS: post listing (link-post title-only text + external
+  url→media + score/comments engagement + RFC3339 decode; self-post title+body + naive-UTC
+  decode; removed post dropped; meta shape), comment listing (entity decode, top-level→`post/…`
+  and nested→`comment/…` parent mapping, `@handle` title, no post-level engagement key), Discover
+  (bare host vs community vs URL-community vs API passthrough + empty-seed error), Paginate
+  (page increment on a non-empty page, stop on an empty listing), and distinct content_hash for
+  a `post/5` vs a `comment/5` (namespacing prevents dedupe collision).
+
+**Status:** Phase 3 in progress — **3 credential-free social adapters** (Mastodon, Hacker News,
+Lemmy) with health monitoring; the Playwright browser path (JS render) and scheduler/queue
+routing remain for the JS half of the exit criteria.
+
+---
+
 ## 2026-07-09 — Phase 3: Hacker News adapter (second credential-free source)
 
 **What**

@@ -62,8 +62,9 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
 - [ ] Playwright browser-worker pool + static→browser escalation.
 - [ ] Anti-detection stack (fingerprints, proxies, sessions, pacing).
 - [~] Social adapters, easy/open first (Reddit, Mastodon, Telegram public, YouTube transcripts),
-  then hostile platforms. **Mastodon + Hacker News adapters done** (both credential-free open
-  APIs); Reddit/Telegram need owner-provided creds (will surface in `ralph/QUESTIONS.md`).
+  then hostile platforms. **Mastodon + Hacker News + Lemmy adapters done** (three credential-free
+  open APIs — the ≥3-adapter exit bar is met on the ingestion side); Reddit/Telegram need
+  owner-provided creds (will surface in `ralph/QUESTIONS.md`).
 - [~] Social normalization (threads, engagement, media urls); social fetch queue.
   `NormalizedDoc` + `Meta()` done (`crawler/internal/social`); scheduler routing/queue pending.
 - [~] Adapter health metrics + auto-disable + contract tests. `HealthTracker` + Prometheus

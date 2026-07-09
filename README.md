@@ -107,7 +107,8 @@ docker run --rm --network ai-search_default -v "$PWD/ai/eval:/eval" -w /eval \
 - [x] **Phase 1 — Crawler MVP** (frontier, politeness scheduler, fetch/extract/dedup, control API)
 - [x] **Phase 2 — Search/RAG API** (chunk/embed/index, hybrid retrieve + RRF + rerank, cited
   local-LLM synthesis, eval harness)
-- [~] Phase 3 — JS + social fetching (in progress: social adapter framework + Mastodon adapter)
+- [~] Phase 3 — JS + social fetching (in progress: social adapter framework + 3 credential-free
+  adapters — Mastodon, Hacker News, Lemmy — with health monitoring; browser path next)
 - [ ] Phase 4 — Scale & quality
 - [ ] Phase 5 — Web UI
 

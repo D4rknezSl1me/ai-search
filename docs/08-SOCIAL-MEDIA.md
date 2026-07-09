@@ -71,9 +71,10 @@ Paid platform API tiers and third-party data vendors are **out of scope**.
 | Telegram | API (Bot/MTProto) | Public channels accessible via API. |
 | Mastodon/Fediverse | API | Open APIs; easy, high-quality. |
 | Hacker News | free API | Official Firebase API; no auth; stories + full comment threads. |
+| Lemmy | free API | Open v3 REST API; no auth; Reddit-shaped posts + comment threads. |
 
 Start with the **easy, open, high-ROI** platforms (Reddit, Mastodon, Telegram public, YouTube
-transcripts, Hacker News) to build the pipeline, then invest in the hostile ones.
+transcripts, Hacker News, Lemmy) to build the pipeline, then invest in the hostile ones.
 
 ## 6. Normalization
 
