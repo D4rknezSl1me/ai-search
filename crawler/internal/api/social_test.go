@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,6 +92,58 @@ func TestSocialAdapterEmptyNameListsAll(t *testing.T) {
 	}
 	if len(body.Adapters) != 3 {
 		t.Fatalf("empty-name path should list all 3 adapters, got %d", len(body.Adapters))
+	}
+}
+
+// --- ingest endpoint -------------------------------------------------------
+// These exercise the handler's guard paths, which resolve before the sink
+// touches store/blob (both nil here), so no live datastores are needed.
+
+func postIngest(t *testing.T, srv *Server, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/internal/social/ingest", strings.NewReader(body))
+	srv.Handler().ServeHTTP(rec, req)
+	return rec
+}
+
+func TestSocialIngestMethodNotAllowed(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/internal/social/ingest", nil)
+	newSocialServer().Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+func TestSocialIngestValidation(t *testing.T) {
+	rec := postIngest(t, newSocialServer(), `{"adapter":"","seed":""}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for missing adapter/seed", rec.Code)
+	}
+}
+
+func TestSocialIngestNilRegistry(t *testing.T) {
+	rec := postIngest(t, NewServer(nil, nil, nil), `{"adapter":"mastodon","seed":"x"}`)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 when registry unconfigured", rec.Code)
+	}
+}
+
+func TestSocialIngestUnknownAdapter(t *testing.T) {
+	rec := postIngest(t, newSocialServer(), `{"adapter":"nope","seed":"x"}`)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 for unknown adapter", rec.Code)
+	}
+	var body struct {
+		Error  string        `json:"error"`
+		Result social.Result `json:"result"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Error == "" || body.Result.Adapter != "nope" {
+		t.Fatalf("expected error + result echoing adapter, got %+v", body)
 	}
 }
 

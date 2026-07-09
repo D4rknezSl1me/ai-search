@@ -65,8 +65,10 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
   then hostile platforms. **Mastodon + Hacker News + Lemmy adapters done** (three credential-free
   open APIs — the ≥3-adapter exit bar is met on the ingestion side); Reddit/Telegram need
   owner-provided creds (will surface in `ralph/QUESTIONS.md`).
-- [~] Social normalization (threads, engagement, media urls); social fetch queue.
-  `NormalizedDoc` + `Meta()` done (`crawler/internal/social`); scheduler routing/queue pending.
+- [x] Social normalization (threads, engagement, media urls); social fetch queue.
+  `NormalizedDoc` + `Meta()` plus an **`Ingester`** that drives adapters end-to-end
+  (Discover→Fetch→Paginate→Parse→persist) and lands posts in the same `documents` + text-blob
+  pipeline as web pages, triggered via `POST /internal/social/ingest`.
 - [x] Adapter health metrics + auto-disable + contract tests. `HealthTracker` + Prometheus
   metrics + contract tests + **per-adapter status endpoint** (`social.Registry` →
   `GET /internal/social/adapters[/{name}]`) all done.

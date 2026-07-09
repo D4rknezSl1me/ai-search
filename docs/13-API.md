@@ -81,6 +81,16 @@ error_rate, last_error?, last_activity?}`. The `{name}` form returns a single ad
 the threshold over the minimum sample. Credential-free adapters registered today: `mastodon`,
 `hackernews`, `lemmy`.
 
+### `POST /internal/social/ingest`
+Drive one social adapter over one seed synchronously and land the resulting posts in the same
+`documents` + text-blob pipeline as web pages (Phase 3). Body: `{adapter, seed, max_pages?}`
+(`max_pages` defaults to 1 = a single page per discovered target; larger values follow the
+adapter's pagination cursor). Returns the run summary `{adapter, seed, targets, pages, docs,
+inserted, duplicates, errors}`. Errors: 400 (missing `adapter`/`seed`), 503 (registry not
+configured), 502 (unknown/disabled adapter or a discover failure, with the partial `result`
+echoed). Exact-dedup is by content hash (platform+post_id), so re-ingesting a post is a no-op
+insert counted under `duplicates`.
+
 ### `GET /metrics`
 Prometheus exposition (all services).
 

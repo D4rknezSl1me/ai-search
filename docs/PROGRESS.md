@@ -22,6 +22,65 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-07-09 — Phase 3: social ingester — posts land in the RAG pipeline
+
+**What**
+- New `crawler/internal/social/ingest.go` — an `Ingester` that drives an adapter over a seed
+  **end-to-end** and persists what it parses: `Discover(seed)` → for each target walk pages
+  (`Fetch` → `Parse` → persist each doc → follow the adapter's `Paginate` cursor) up to a
+  per-target page cap. This is the missing wire in Phase 3: adapters previously only produced
+  `NormalizedDoc`s in memory (+ health), with nothing driving them or storing their output —
+  "scheduler routing/queue pending." The ingester is that piece.
+  - A small `Sink` interface (`Persist(ctx, *NormalizedDoc) (inserted, err)`) keeps package
+    `social` free of `store`/`blob` deps and makes the runner unit-testable with a fake.
+  - Failure policy matches the crawler's "fail loud, don't under-collect": a **fetch error** ends
+    that target's walk (no response ⇒ no pagination cursor) but is only counted, not fatal;
+    **parse/persist errors** are counted but do not stop the remaining docs/pages; if the adapter
+    **auto-disables mid-run** (error rate crossed its threshold) the walk stops immediately.
+  - `maxPages<=0` falls back to `DefaultMaxPages=1` (single page) so a run never walks an
+    unbounded timeline by accident; deeper walks are an explicit opt-in via the request.
+  - Returns a `Result` (targets/pages/docs/inserted/duplicates/errors) so a caller sees exactly
+    what landed. Adapters record their own fetch/item health internally, so the ingester does
+    **not** double-count — it only reads `Health().Enabled`.
+- New `crawler/internal/api/socialsink.go` — the concrete `Sink` bridging to storage: writes the
+  post's clean text to MinIO keyed by content hash (same `blob.TextKey` contract as web pages, so
+  the intelligence plane chunks/embeds social posts identically) and inserts a `documents` row
+  carrying `NormalizedDoc.Meta()` (`source:"social"`, platform, post_id, engagement, …). Source
+  host is the permalink's host (the real instance, e.g. `mastodon.social`) falling back to the
+  platform label. Exact-dedup is by content hash (platform+post_id), so re-ingesting a post is a
+  no-op insert reported back as a duplicate.
+- Wired `POST /internal/social/ingest` into the control API (`{adapter, seed, max_pages}`) — the
+  operator-facing trigger for the social fetch path. It builds an ingester over the live registry
+  + a `socialSink{store, blob}`, runs synchronously, and returns the `Result`. Guard paths: 405
+  (non-POST), 400 (missing adapter/seed), 503 (no registry), 502 (unknown/disabled adapter or a
+  discover error, with the partial `result` echoed).
+
+**Why**
+- Phase 3's social half is only useful if social posts actually reach the index. The adapters +
+  health endpoint existed, but nothing connected `Adapter` output to the `documents`/text-blob
+  pipeline the RAG plane reads. This closes that gap: a seed can now be ingested and its posts
+  become searchable alongside crawled web pages — completing the "social fetch queue / scheduler
+  routing" roadmap item.
+
+**Verification** (golang:1.25-alpine container; no local toolchain, `go mod tidy` at build)
+- `gofmt` clean on all changed/new files; `go vet ./...` clean; `go build ./...` clean; full
+  `go test ./...` green.
+- New `social/ingest_test.go` (7 tests, fake adapter + fake sink, no network) PASS: pagination
+  across two pages with cross-page dedup (docs=4 → inserted=3/duplicates=1); `maxPages` cap
+  fetches one page; `maxPages<=0` falls back to `DefaultMaxPages`; a fetch error is counted and
+  ends the target (errors=1, pages=0); parse **and** persist errors are counted without aborting
+  the batch (docs=2, errors=2, inserted=0); unknown + disabled adapters error before any fetch;
+  discover error surfaces with errors=1.
+- New `api` endpoint tests (4, via `httptest`, store/blob nil since guard paths resolve first)
+  PASS: 405 on GET, 400 on empty adapter/seed, 503 on nil registry, 502 on unknown adapter with
+  the `result` echoing the requested adapter.
+
+**Status:** Phase 3 — social ingestion is now **end-to-end** (3 credential-free adapters →
+ingester → storage/index, with health + status endpoint). Remaining for the phase: the Playwright
+browser path (JS render) and anti-detection stack.
+
+---
+
 ## 2026-07-09 — Phase 3: social adapter registry + per-adapter status endpoint
 
 **What**

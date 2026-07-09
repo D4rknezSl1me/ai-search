@@ -37,6 +37,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/internal/documents/", s.document)            // GET /internal/documents/{id}
 	mux.HandleFunc("/internal/social/adapters", s.socialAdapters) // GET (all)
 	mux.HandleFunc("/internal/social/adapters/", s.socialAdapter) // GET /.../{name}
+	mux.HandleFunc("/internal/social/ingest", s.socialIngest)     // POST
 	return mux
 }
 
@@ -195,6 +196,46 @@ func (s *Server) socialAdapters(w http.ResponseWriter, _ *http.Request) {
 		"summary":  social.Summarize(statuses),
 		"adapters": statuses,
 	})
+}
+
+type socialIngestReq struct {
+	Adapter  string `json:"adapter"`
+	Seed     string `json:"seed"`
+	MaxPages int    `json:"max_pages"` // pagination cap per target; 0 → adapter default
+}
+
+// socialIngest drives one adapter over one seed synchronously and lands the
+// resulting posts in the same documents + text-blob pipeline as web pages
+// (docs/08 §7). This is the operator-facing trigger for the social fetch path:
+// previously the adapters could only report health; now a seed can actually be
+// ingested. The run summary (targets/pages/docs/inserted/duplicates/errors) is
+// returned so the caller sees exactly what landed.
+func (s *Server) socialIngest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST only"})
+		return
+	}
+	if s.social == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "social registry not configured"})
+		return
+	}
+	var req socialIngestReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.Adapter == "" || req.Seed == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "adapter and seed are required"})
+		return
+	}
+
+	ing := social.NewIngester(s.social, &socialSink{store: s.store, blob: s.blob}, req.MaxPages, 0)
+	res, err := ing.IngestSeed(r.Context(), req.Adapter, req.Seed)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error(), "result": res})
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // socialAdapter reports one adapter's health by name.
