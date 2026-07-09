@@ -70,9 +70,10 @@ Paid platform API tiers and third-party data vendors are **out of scope**.
 | LinkedIn | browser | Extremely hostile to automation; high ban risk. |
 | Telegram | API (Bot/MTProto) | Public channels accessible via API. |
 | Mastodon/Fediverse | API | Open APIs; easy, high-quality. |
+| Hacker News | free API | Official Firebase API; no auth; stories + full comment threads. |
 
 Start with the **easy, open, high-ROI** platforms (Reddit, Mastodon, Telegram public, YouTube
-transcripts) to build the pipeline, then invest in the hostile ones.
+transcripts, Hacker News) to build the pipeline, then invest in the hostile ones.
 
 ## 6. Normalization
 

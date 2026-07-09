@@ -22,6 +22,46 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-07-09 — Phase 3: Hacker News adapter (second credential-free source)
+
+**What**
+- New `crawler/internal/social/hackernews.go` — a second adapter on the Phase 3 framework,
+  using the **official HN Firebase API** (`hacker-news.firebaseio.com/v0`, fully public, no auth):
+  - `Discover` handles three seed shapes: a **feed name** (`top`/`new`/`best`/`ask`/`show`/`job`,
+    also tolerating the `topstories` form) → one API round-trip that expands the story list to the
+    first `limit` item URLs (default 30, the front-page size); a **numeric item id** → that item's
+    URL; a **full item API URL** → passthrough. Unknown seeds error loudly (docs/08 §8).
+  - `Fetch` GETs a target (story list or item), 8 MiB cap, records health.
+  - `Parse` turns a single item object into one `NormalizedDoc`: strips comment/Ask-HN HTML to
+    text, sets `Text = title + body` (so a link-story's headline is searchable), maps `parent`→
+    `ParentID` for thread reconstruction, `by`→author, unix `time`→`PostedAt`, external story
+    `url`→`MediaURLs`, and `score`/`descendants` engagement for stories/jobs (not comments).
+    Deleted/dead/`null`/empty items are dropped.
+  - Reuses the framework's `htmlToText`, `resolveLang`, `makeTitle`, and `HealthTracker`; emits the
+    existing `crawler_social_{fetch,items}_total{adapter="hackernews"}` metrics — no new deps.
+- This is a **different pipeline shape** than Mastodon (a flat id-array feed expanded at Discover
+  time + per-item fetch, vs one paginated timeline page), which proves the adapter interface
+  generalizes beyond a single platform model.
+
+**Why**
+- Directly advances Phase 3's "≥3 social adapters" exit criterion with a **zero-credential**
+  source (no owner blocker), and validates the framework against a second, structurally different
+  API before investing in the login-walled platforms. Recall-first (CLAUDE.md north star): HN adds
+  high-signal tech discussion with full comment threads.
+
+**Verification** (golang:1.25-alpine container; no local toolchain)
+- `go vet ./...` clean; `go build ./...` clean; `go test ./...` green.
+- New `hackernews_test.go` (6 tests) all PASS: story parse (title-only text, external url→media,
+  score/descendants, unix time decode, meta shape), comment parse (HTML strip + entity decode,
+  `parent_id`, @handle title fallback, no score key), Ask-HN (title+body), skip contract
+  (deleted/`null`/empty → 0 docs), Discover (id/URL passthrough + unknown-seed error), and
+  distinct content_hash per post.
+
+**Status:** Phase 3 in progress — 2 credential-free social adapters (Mastodon, Hacker News);
+one more open adapter or the Playwright browser path next.
+
+---
+
 ## 2026-07-09 — Phase 3: social adapter framework + Mastodon adapter
 
 **What**
