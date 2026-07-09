@@ -159,6 +159,8 @@ services:
     env_file: ../.env
     ports: ["${AI_API_PORT}:8000"]
     depends_on:
+      postgres: { condition: service_healthy }
+      minio: { condition: service_healthy }
       qdrant: { condition: service_healthy }
       opensearch: { condition: service_healthy }
     restart: unless-stopped
@@ -196,11 +198,13 @@ services:
   reranker:
     profiles: ["gpu"]
     image: ${TEI_IMAGE:-ghcr.io/huggingface/text-embeddings-inference:1.8}
-    command: ["--model-id", "${RERANK_MODEL_ID:-BAAI/bge-reranker-v2-m3}", "--port", "8080"]
+    command: ["--model-id", "${RERANK_MODEL_ID:-cross-encoder/ms-marco-MiniLM-L-6-v2}",
+              "--port", "${RERANK_PORT:-8085}",
+              "--max-batch-tokens", "4096", "--max-client-batch-size", "64"]
     environment:
       - HF_HUB_OFFLINE=1
       - USE_FLASH_ATTENTION=0
-    ports: ["${RERANK_PORT:-8085}:8080"]
+    ports: ["${RERANK_PORT:-8085}:${RERANK_PORT:-8085}"]
     volumes:
       - teicache:/data
     deploy:
