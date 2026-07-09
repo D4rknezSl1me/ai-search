@@ -43,6 +43,11 @@ quality second" (see `docs/00-OVERVIEW.md`, `docs/07-RAG-SEARCH.md`).
 4. **Verify before claiming done.** Bring services up, hit health/endpoints, run tests, and
    report actual output. No "done" without evidence.
 
+5. **No AI/Claude attribution in the repo.** The owner keeps full ownership of the repo. Do NOT
+   add Claude/AI attribution to commits or PRs: no `Co-Authored-By: Claude ...` trailers, no
+   "Generated with Claude Code" footers, no AI mentions in commit messages or PR bodies. Commits
+   should read as authored solely by the owner. Keep any AI footprint to the strict minimum.
+
 ## Environment / secrets (this device only)
 
 - This is a long-term, **single-device** project. Real secrets live in `.env` (gitignored,

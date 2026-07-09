@@ -1,7 +1,45 @@
 # Project Progress Log
 
 Reverse-chronological record of meaningful changes. Update this on every meaningful change
-(see `CLAUDE.md` rule 2). Format: date · what · why · verification.
+(see `CLAUDE.md` rule 3). Format: date · what · why · verification.
+
+---
+
+## 2026-07-09 — Phase 1: Crawler MVP
+
+**What**
+- Implemented the crawler ingestion loop in Go (`crawler/internal/...`):
+  - `urlx`: URL canonicalization, hashing, scope helpers.
+  - `simhash`: 64-bit near-duplicate fingerprint.
+  - `store` (pgx): frontier (claim via `FOR UPDATE SKIP LOCKED`), documents (exact-dedup on
+    content_hash), sources, campaigns; JSONB marshalled + cast to avoid pgx ambiguity.
+  - `blob` (minio-go): gzip raw content to MinIO, keyed by content hash.
+  - `fetch`: polite HTTP client (UA, timeout, body cap, redirect policy).
+  - `extract`: go-readability main content + metadata, whatlanggo language detect, link
+    discovery, content/simhash.
+  - `crawl`: worker pool + per-host politeness limiter; fetch→extract→store→discover; retry
+    with attempt cap; max_depth/max_pages scope.
+  - `api`: control endpoints (`POST /internal/campaigns`, `GET /internal/frontier`,
+    `/internal/coverage`, `/internal/documents/{id}`) + `/healthz` `/readyz` `/metrics`.
+- Crawler Dockerfile builds via `go mod tidy` (Go 1.25; minio-go v7 needs ≥1.25).
+- Added crawler tuning vars to `.env`/`.env.example`.
+
+**Why**
+- Deliver the breadth-first ingestion engine: seed a campaign and stream documents into storage.
+
+**Verification** (live run against quotes.toscrape.com, max_pages 30)
+- Campaign seeded; crawl ran end-to-end: 37 fetched (all 200), **28 unique documents**,
+  **9 exact duplicates skipped**, 137 links discovered, max_pages enforced (101 skipped).
+- Metadata extracted (title/author/lang), raw content gzipped in MinIO, `/metrics` populated,
+  `/readyz` green (postgres+minio).
+
+**Known limitations (follow-ups):**
+- No reaper for URLs stuck in `FETCHING` if the process dies mid-fetch (add a timeout requeue).
+- `max_pages` is best-effort (minor overshoot under concurrency).
+- Non-HTML (PDF/doc) not yet parsed; JS/social rendering is Phase 3.
+
+**Status:** Phase 1 complete. Next: Phase 2 — Search/RAG API (embeddings → indexes → retrieve
+→ rerank → local-LLM synthesis).
 
 ---
 

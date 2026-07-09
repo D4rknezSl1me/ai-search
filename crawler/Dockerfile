@@ -1,12 +1,14 @@
-# Build the crawler skeleton. Stdlib only → no module downloads needed.
-FROM golang:1.23-alpine AS build
+# Build the crawler. `go mod tidy` resolves dependencies at build time
+# (go.sum is generated in-image), so no local Go toolchain is required.
+FROM golang:1.25-alpine AS build
+RUN apk add --no-cache git ca-certificates
 WORKDIR /src
-COPY go.mod ./
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/crawler .
+RUN go mod tidy
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o /out/crawler .
 
 FROM alpine:3.20
-RUN adduser -D -u 10001 crawler
+RUN apk add --no-cache ca-certificates && adduser -D -u 10001 crawler
 USER crawler
 COPY --from=build /out/crawler /usr/local/bin/crawler
 EXPOSE 8090

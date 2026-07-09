@@ -1,103 +1,75 @@
-// Command crawler is the ai-search ingestion service.
+// Command crawler is the ai-search ingestion service (Phase 1 — Crawler MVP).
 //
-// Phase 0: this is a skeleton. It loads configuration from the environment,
-// exposes health/readiness endpoints, and verifies TCP connectivity to its
-// backing services (Postgres, Redis, NATS). The actual frontier, fetchers and
-// extractor arrive in Phase 1 (see docs/04-CRAWLER.md, docs/12-ROADMAP.md).
+// It seeds a campaign, then runs a fetch → extract → store → discover loop over
+// the open web, persisting documents to Postgres/MinIO. Control and health are
+// exposed over HTTP. See docs/04-CRAWLER.md and docs/12-ROADMAP.md.
 package main
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"log"
-	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
+
+	"github.com/ai-search/crawler/internal/api"
+	"github.com/ai-search/crawler/internal/blob"
+	"github.com/ai-search/crawler/internal/config"
+	"github.com/ai-search/crawler/internal/crawl"
+	"github.com/ai-search/crawler/internal/fetch"
+	"github.com/ai-search/crawler/internal/store"
 )
 
-// dep is a backing service the crawler depends on.
-type dep struct {
-	Name string
-	Addr string
-}
-
-func env(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-func deps() []dep {
-	return []dep{
-		{"postgres", net.JoinHostPort(env("POSTGRES_HOST", "postgres"), env("POSTGRES_PORT", "5432"))},
-		{"redis", net.JoinHostPort(env("REDIS_HOST", "redis"), env("REDIS_PORT", "6379"))},
-		{"nats", net.JoinHostPort(env("NATS_HOST", "nats"), env("NATS_PORT", "4222"))},
-	}
-}
-
-// checkTCP reports whether a TCP connection to addr can be established.
-func checkTCP(addr string) bool {
-	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
-	if err != nil {
-		return false
-	}
-	_ = conn.Close()
-	return true
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-// healthz is liveness: the process is up.
-func healthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "crawler"})
-}
-
-// readyz is readiness: all backing services are reachable.
-func readyz(w http.ResponseWriter, _ *http.Request) {
-	results := map[string]string{}
-	ready := true
-	for _, d := range deps() {
-		if checkTCP(d.Addr) {
-			results[d.Name] = "ok"
-		} else {
-			results[d.Name] = "unreachable"
-			ready = false
-		}
-	}
-	status := http.StatusOK
-	state := "ready"
-	if !ready {
-		status = http.StatusServiceUnavailable
-		state = "not_ready"
-	}
-	writeJSON(w, status, map[string]any{"status": state, "dependencies": results})
-}
-
 func main() {
-	port := env("CRAWLER_HEALTH_PORT", "8090")
+	cfg := config.Load()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", healthz)
-	mux.HandleFunc("/readyz", readyz)
-	// Placeholder so Prometheus scrape config doesn't error; real metrics in Phase 1.
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, "# ai-search crawler metrics placeholder\n")
-	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	addr := ":" + port
-	log.Printf("crawler skeleton listening on %s (health: /healthz, /readyz)", addr)
+	// Connect datastores (each retries until reachable).
+	log.Printf("connecting to Postgres at %s:%s ...", cfg.PGHost, cfg.PGPort)
+	st, err := store.New(ctx, cfg.PGConnString())
+	if err != nil {
+		log.Fatalf("postgres: %v", err)
+	}
+	defer st.Close()
+
+	log.Printf("connecting to MinIO at %s ...", cfg.MinIOEndpoint())
+	bl, err := blob.New(ctx, cfg.MinIOEndpoint(), cfg.MinIOUser, cfg.MinIOPassword, cfg.MinIOBucket)
+	if err != nil {
+		log.Fatalf("minio: %v", err)
+	}
+
+	// Crawl engine.
+	fetcher := fetch.New(time.Duration(cfg.FetchTimeout)*time.Second, cfg.MaxBodyBytes, cfg.UserAgent)
+	limiter := crawl.NewHostLimiter(time.Duration(cfg.MinDelayMs) * time.Millisecond)
+	scheduler := crawl.NewScheduler(st, bl, fetcher, limiter, cfg.Workers)
+
+	go scheduler.Run(ctx)
+	log.Printf("crawl scheduler started with %d workers (min host delay %dms)", cfg.Workers, cfg.MinDelayMs)
+
+	// HTTP control/health server.
 	srv := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
+		Addr:              ":" + cfg.HealthPort,
+		Handler:           api.NewServer(st, bl).Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("server error: %v", err)
-	}
+	go func() {
+		log.Printf("control API listening on :%s", cfg.HealthPort)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("http server: %v", err)
+		}
+	}()
+
+	// Graceful shutdown.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	<-sig
+	log.Printf("shutting down ...")
+	cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	_ = srv.Shutdown(shutdownCtx)
 }

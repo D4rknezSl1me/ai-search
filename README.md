@@ -62,11 +62,25 @@ Service endpoints once up: OpenSearch `:9200`, Qdrant `:6333`, MinIO console
 `:9001`, NATS monitor `:8222`, Prometheus `:9090`, Grafana `:3000`. With the
 `app` profile: crawler health `:8090/healthz`, AI API `:8000/healthz`.
 
+### Run a crawl (Phase 1)
+
+```bash
+# Seed a campaign (crawler must be running: .\tasks.ps1 up-app)
+curl -X POST localhost:8090/internal/campaigns -H 'Content-Type: application/json' \
+  -d '{"name":"demo","seeds":["https://quotes.toscrape.com/"],
+       "max_depth":2,"max_pages":30,"allow_external":false,"min_delay_ms":300}'
+
+curl "localhost:8090/internal/frontier?campaign=1"   # crawl progress by state
+curl localhost:8090/internal/coverage                # total documents indexed
+curl localhost:8090/internal/documents/1             # a document's metadata
+curl localhost:8090/metrics                           # Prometheus crawl metrics
+```
+
 ## Status
 
 - [x] Documentation
 - [x] **Phase 0 — Infrastructure scaffold** (services, DB schema, crawler + AI skeletons)
-- [ ] Phase 1 — Crawler MVP
+- [x] **Phase 1 — Crawler MVP** (frontier, politeness scheduler, fetch/extract/dedup, control API)
 - [ ] Phase 2 — Search/RAG API
 - [ ] Phase 3 — JS + social fetching
 - [ ] Phase 4 — Scale & quality
