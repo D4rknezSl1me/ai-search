@@ -65,8 +65,8 @@ Pipeline ([07-RAG-SEARCH.md](07-RAG-SEARCH.md)):
 
 ## 6. Also pick up (backlog — see PROGRESS.md)
 
-- [ ] FETCHING reaper in the crawler (timeout requeue).
-- [ ] Unit tests for `urlx` and `simhash` (via `go test` in a Go container).
+- [x] FETCHING reaper in the crawler (timeout requeue; `claimed_at` column + ticker).
+- [x] Unit tests for `urlx` and `simhash` (via `go test` in a Go container).
 
 ## Commit discipline
 

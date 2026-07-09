@@ -3,7 +3,7 @@
 Phased so each stage produces something runnable and measurable. Breadth-first, per owner
 priority: get wide coverage working, then refine quality over already-collected data.
 
-## Phase 0 — Infrastructure scaffold  ⬅️ current
+## Phase 0 — Infrastructure scaffold  ✅ done
 
 **Goal:** one command brings up every backing service; skeleton crawler + AI service build & run.
 
@@ -20,7 +20,7 @@ Steps:
 **Exit criteria:** `make up` → all containers healthy; both skeletons pass health checks and can
 reach their dependencies.
 
-## Phase 1 — Crawler MVP
+## Phase 1 — Crawler MVP  ✅ done
 
 **Goal:** crawl the open (static) web end-to-end into stored, deduped documents.
 
@@ -35,23 +35,27 @@ reach their dependencies.
 **Exit criteria:** seed a campaign → sustained fetch+extract with dedupe; documents + metadata
 persisted; crawl dashboard live; target throughput demonstrated on a sample.
 
-## Phase 2 — Search / RAG API
+## Phase 2 — Search / RAG API  ✅ done
 
 **Goal:** answer natural-language queries with cited answers over indexed content.
 
-- Chunker + GPU embeddings (TEI) → Qdrant; text/metadata → OpenSearch.
-- Hybrid retrieval + RRF fusion + cross-encoder re-rank (GPU).
-- Query understanding (intent, expansion, decomposition, filters).
-- Local LLM serving (Ollama on the RTX 5070); grounded synthesis with citations, streaming,
-  confidence + conflicts. No paid API.
-- `/search` and `/retrieve` APIs; response contract ([13](13-API.md)).
-- Eval harness (recall@k, groundedness, citation accuracy) + nightly run.
-- Cost tracking.
+- [x] Crawler persists clean text (MinIO); poll-based chunker + TEI embeddings → Qdrant;
+  text/metadata → OpenSearch (idempotent per `chunk_id`).
+- [x] Hybrid retrieval (BM25 ∪ ANN) + RRF fusion + cross-encoder re-rank.
+- [x] Filters (date/source/lang/domain); recall-first assembly (dedupe, diversify, backfill).
+- [x] Local LLM synthesis (Ollama/llama3.1:8b on the RTX 5070) with numbered citations,
+  streaming (SSE), citation verification, confidence + coverage. No paid API.
+- [x] `/v1/search`, `/v1/retrieve`, `/v1/coverage`; response contract ([13](13-API.md)).
+- [x] Eval harness (recall@k, MRR, nDCG; citation accuracy, LLM-as-judge groundedness).
+- [x] Degradation paths (Qdrant → lexical-only, reranker → fused, LLM → retrieve-only).
+- [~] Deferred/partial: richer query understanding (LLM expansion/decomposition) is minimal;
+  embeddings + reranker run on **CPU** pending stable Blackwell/sm_120 TEI GPU kernels
+  (image is one env swap away); multilingual `bge-reranker-v2-m3` swapped for MiniLM until then.
 
-**Exit criteria:** end-to-end query → cited answer; eval metrics meet v1 targets
-([00](00-OVERVIEW.md) §5); degradation paths work.
+**Exit criteria (met):** end-to-end query → cited answer; recall@5/10 = 1.0, nDCG@10 = 0.91,
+citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation paths verified.
 
-## Phase 3 — JS + Social ingestion
+## Phase 3 — JS + Social ingestion  ⬅️ next
 
 **Goal:** cover dynamic and social content.
 

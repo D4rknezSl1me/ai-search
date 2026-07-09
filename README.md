@@ -76,12 +76,37 @@ curl localhost:8090/internal/documents/1             # a document's metadata
 curl localhost:8090/metrics                           # Prometheus crawl metrics
 ```
 
+### Search & ask (Phase 2)
+
+Bring up the GPU models and app (`.\tasks.ps1 up-gpu` + `.\tasks.ps1 up-app`). The
+indexer auto-chunks/embeds crawled documents into Qdrant + OpenSearch on startup.
+
+```bash
+curl localhost:8000/v1/coverage                       # what's indexed (docs/chunks/domains)
+
+# Hybrid retrieval only (BM25 ∪ vector → RRF → cross-encoder rerank):
+curl -X POST localhost:8000/v1/retrieve -H 'Content-Type: application/json' \
+  -d '{"query":"Where was Albert Einstein born?","max_sources":8}'
+
+# Grounded, cited answer from the local LLM (set stream:true for SSE):
+curl -X POST localhost:8000/v1/search -H 'Content-Type: application/json' \
+  -d '{"query":"Where was Albert Einstein born?","options":{"stream":false}}'
+```
+
+Run the eval harness (retrieval + generation metrics) against the live stack:
+```bash
+docker run --rm --network ai-search_default -v "$PWD/ai/eval:/eval" -w /eval \
+  -e AISEARCH_API=http://ai-api:8000 python:3.11-slim \
+  sh -c "pip install -q httpx && python run_eval.py --judge"
+```
+
 ## Status
 
 - [x] Documentation
 - [x] **Phase 0 — Infrastructure scaffold** (services, DB schema, crawler + AI skeletons)
 - [x] **Phase 1 — Crawler MVP** (frontier, politeness scheduler, fetch/extract/dedup, control API)
-- [ ] Phase 2 — Search/RAG API
+- [x] **Phase 2 — Search/RAG API** (chunk/embed/index, hybrid retrieve + RRF + rerank, cited
+  local-LLM synthesis, eval harness)
 - [ ] Phase 3 — JS + social fetching
 - [ ] Phase 4 — Scale & quality
 - [ ] Phase 5 — Web UI

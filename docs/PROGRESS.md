@@ -3,14 +3,72 @@
 Reverse-chronological record of meaningful changes. Update this on every meaningful change
 (see `CLAUDE.md` rule 3). Format: date · what · why · verification.
 
-## Backlog (deferred follow-ups — address in/around Phase 2)
+## Backlog (deferred follow-ups)
 
-- [ ] **FETCHING reaper** — requeue frontier URLs stuck in `FETCHING` past a timeout (orphaned if
-  the crawler dies mid-fetch). Small SQL + a goroutine ticker in the crawler.
-- [ ] **Unit tests** — `urlx` canonicalization/scope and `simhash` distance (run via `go test`
-  in a Go container; no local toolchain).
+- [x] **FETCHING reaper** — done (2026-07-09). `frontier_urls.claimed_at` + goroutine ticker
+  (`CRAWLER_REAP_AFTER_S`, default 300s) requeues stuck URLs under the retry cap.
+- [x] **Unit tests** — done (2026-07-09). `urlx` and `simhash` tests, run via `go test` in a
+  golang container.
+- [ ] **GPU embeddings/reranker on Blackwell (sm_120)** — TEI's candle backend hangs at warmup
+  on sm_120 here (loads on CUDA, then stalls); running on **CPU** for now. The GPU image is
+  built (`deploy/tei-blackwell`) and one `TEI_IMAGE` swap away once TEI ships stable Blackwell
+  kernels. Also restore `bge-reranker-v2-m3` (multilingual) over MiniLM at that point.
+- [ ] **Richer query understanding** — LLM-driven expansion/decomposition and intent-based
+  freshness boosting (current pipeline normalizes + filters only).
+- [ ] **Index reconciliation** — reconcile `documents.n_chunks` vs actual Qdrant/OpenSearch
+  counts; prune stale chunks when a doc is re-chunked to fewer pieces.
 - [ ] **max_pages best-effort overshoot** — tighten the concurrent cap if it matters.
 - [ ] Non-HTML parsing (PDF/doc) and JS/social rendering are phase-tracked (Phase 3), not backlog.
+
+---
+
+## 2026-07-09 — Phase 2: Search / RAG API
+
+**What**
+- **Clean-text gap resolved (the prerequisite):** the crawler now writes clean extracted text to
+  MinIO at `text/{content_hash}.txt.gz` (idempotent, ungated by insert-dedup so re-crawls backfill
+  known docs). Chosen over re-extraction in Python; the indexer reads it by content hash. NATS
+  `doc.ready` streaming deferred — poll-based indexing covers backfill + new docs simply.
+- **Intelligence plane (`ai/`, FastAPI):**
+  - `indexer` — polls Postgres for un-indexed docs (`n_chunks=0`), pulls text from MinIO,
+    structure-aware chunking (~400 tok, ~12% overlap), TEI embeddings, upserts to Qdrant
+    (vectors) + OpenSearch (text) idempotently by `chunk_id`; `-1` sentinel for empty docs.
+  - `indexes` — idempotent Qdrant collection (Cosine, payload indexes) + OpenSearch mapping
+    (shingle sub-field) on startup.
+  - `retrieval` — BM25 ∪ ANN with shared filters → RRF → cross-encoder rerank (TEI) →
+    dedupe/diversify with recall-first backfill. BGE query instruction on the query side.
+  - `synthesis` — grounded answer via local Ollama (`llama3.1:8b`), numbered `[n]` citations,
+    citation verification, confidence/coverage; SSE streaming.
+  - `main` — `/v1/search` (synthesis, streaming), `/v1/retrieve`, `/v1/coverage`, `/metrics`,
+    `/readyz`; graceful degradation everywhere.
+  - `eval/` — labeled set + runner: recall@k, MRR, nDCG; citation accuracy + LLM-as-judge
+    groundedness (local model, no paid judge).
+- **Backlog cleared:** FETCHING reaper (`claimed_at` col via migration `0002` + ticker) and
+  `urlx`/`simhash` unit tests.
+- **GPU/infra:** TEI image made swappable (`TEI_IMAGE`); built a Blackwell/sm_120 image
+  (`deploy/tei-blackwell`, blackwell TEI binary + CUDA 12.9 math libs, compat driver removed).
+  It loads on CUDA but the candle backend hangs at warmup on sm_120, so embeddings + reranker
+  run on **CPU** for now (models pre-staged in the teicache volume, `HF_HUB_OFFLINE=1`). Reranker
+  uses `ms-marco-MiniLM-L-6-v2` (candle-stable) instead of `bge-reranker-v2-m3` for now.
+
+**Why**
+- Deliver the query-time product: natural-language question → grounded, cited answer over
+  crawled content, fully self-hosted (CLAUDE.md rule 2). Recall-first per the north star.
+
+**Verification** (live stack, fresh `quotes-phase2` crawl: 33 docs)
+- Indexing: 33/33 docs indexed → **52 chunks**, matching across Postgres, Qdrant (green, 52
+  points), OpenSearch (52 docs).
+- `/v1/retrieve`: hybrid hits with both lexical+vector ranks; rerank reorders (top result
+  promoted). `/v1/search`: grounded answer with inline `[n]` citations resolving to real URLs;
+  correctly refuses to hallucinate absent facts.
+- **Eval (8 labeled queries):** recall@5 = recall@10 = **1.0**, nDCG@10 = 0.913, MRR = 0.9;
+  citation accuracy = **1.0**, groundedness (LLM-judge) = 0.75, 8/8 answered.
+- Degradation: Qdrant down → lexical-only (verified); `synthesize:false`/LLM down → retrieve-only
+  (verified). SSE stream emits `source`→`token`→`citations`→`meta`→`done`.
+- `go test` green for `urlx` + `simhash`.
+
+**Status:** Phase 2 complete. Next: Phase 3 — JS + social ingestion. Follow-ups: GPU embeddings
+on Blackwell once TEI kernels stabilize; richer query understanding; index reconciliation.
 
 ---
 
