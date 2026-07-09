@@ -1,0 +1,37 @@
+# Secrets / env
+.env
+*.local
+
+# Go
+/crawler/bin/
+*.exe
+*.test
+*.out
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env.py
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node (browser workers / UI, later)
+node_modules/
+dist/
+
+# Data / volumes (never commit runtime data)
+/data/
+*.snapshot
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

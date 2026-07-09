@@ -1,0 +1,55 @@
+# Example application config (Phase 1+). Phase 0 services read from env (.env).
+# Copy to config/config.yaml and adjust. See docs/04-CRAWLER.md §8 for campaigns.
+
+crawler:
+  politeness:
+    per_host_concurrency: 4
+    min_delay_ms: 500
+    adaptive: true
+  fetch:
+    timeout_ms: 15000
+    max_response_bytes: 5000000
+    user_agents:
+      - "Mozilla/5.0 (compatible; ai-search/0.1)"
+  render_js: auto            # never | auto | always
+  robots:
+    enabled: false           # deferred by owner decision (docs/11-SECURITY-LEGAL.md)
+
+extraction:
+  min_content_chars: 200
+  dedupe:
+    exact: true
+    near_duplicate: true
+    simhash_threshold: 3
+
+embeddings:
+  model_id: BAAI/bge-large-en-v1.5
+  dim: 1024
+  batch_size: 32
+
+# Local synthesis LLM (Ollama on the RTX 5070) — no paid API.
+llm:
+  provider: ollama            # ollama | vllm
+  model: llama3.1:8b          # swappable; 14b possible by time-sharing VRAM
+  endpoint: http://llm:11434
+  max_tokens: 1024
+  temperature: 0.2
+
+retrieval:
+  top_k_lexical: 100
+  top_k_vector: 100
+  rrf_k: 60
+  rerank_top_n: 50
+  context_chunks: 12
+  max_chunks_per_domain: 3
+
+# Example campaign; normally stored in Postgres campaigns.config
+campaigns:
+  - name: sample-open-web
+    seeds:
+      - "https://en.wikipedia.org/wiki/Web_crawler"
+    include: ["*"]
+    exclude: ["*.pdf$"]
+    max_depth: 2
+    max_pages: 1000
+    render_js: auto

@@ -1,0 +1,128 @@
+# 04 — Crawler Subsystem
+
+The crawler is the recall engine. Its job: fetch as much relevant content as possible, quickly,
+without getting blocked, and without losing state on crash.
+
+## 1. Subcomponents
+
+```
+Seeds ─▶ Frontier ─▶ Scheduler ─▶ Fetch dispatcher ─┬─▶ Static fetchers (Go)
+                                                     └─▶ Browser workers (Playwright)
+                                                            │
+Extractor ◀── raw content ◀───────────────────────────────┘
+   │
+   ├─▶ new links ─▶ Frontier (with dedupe)
+   └─▶ Document ─▶ Blob store + "document ready" event
+```
+
+## 2. Frontier
+
+The frontier is the set of URLs to crawl, with ordering.
+
+- **Durable store:** PostgreSQL table `frontier_urls` (survives restarts).
+- **Hot layer:** Redis sorted set keyed by priority for fast pop; Redis bloom filter for
+  "already seen" URL dedupe (canonicalized URL hash).
+- **URL canonicalization:** lowercase host, strip fragments, sort query params, remove tracking
+  params, resolve relative → absolute. Dedupe on the canonical form's hash.
+- **Priority score** (higher = sooner):
+  `priority = w1·source_authority + w2·freshness_need + w3·(1/depth) + w4·value_estimate − w5·host_backpressure`.
+  Weights configurable; tuned per campaign.
+- **Politeness state:** per-host next-allowed-fetch timestamp and in-flight counter.
+
+### Frontier lifecycle states
+`PENDING → SCHEDULED → FETCHING → FETCHED | FAILED | SKIPPED`, plus `RETRY` with backoff.
+
+## 3. Scheduler & politeness
+
+- **Per-host concurrency cap** and **min delay** (defaults conservative; tunable aggressive).
+- **Adaptive throttling:** on 429/503/timeouts, exponentially back off that host; on sustained
+  success, ramp concurrency up to the cap.
+- **Global rate budget** to protect your uplink and the GPU/index pipeline downstream.
+- **DNS + connection caching** to cut latency.
+- **robots.txt / crawl-delay:** parser wired but **disabled by default** per owner decision;
+  a single config flag re-enables it later (see [11](11-SECURITY-LEGAL.md)).
+
+## 4. Fetchers (static, Go)
+
+- Built on `net/http` + `colly` with:
+  - Connection pooling, HTTP/2, gzip/br decompression.
+  - Configurable timeouts (connect/read/total), max response size, redirect policy.
+  - Cookie jar per host, reton transient errors with jittered backoff.
+  - User-agent rotation and realistic header sets.
+- Emits raw bytes + response metadata (status, headers, final URL, timing) to the blob store.
+- Content-type routing: HTML → extractor; PDF/doc → format handlers; non-target MIME → skip.
+- **Escalation rule:** if a static fetch yields near-empty content but the page references heavy
+  JS (heuristics: low text/HTML ratio, known SPA frameworks), re-route the URL to a browser worker.
+
+## 5. Browser workers (dynamic, Playwright)
+
+For JS-rendered and social content ([08-SOCIAL-MEDIA.md](08-SOCIAL-MEDIA.md)).
+
+- Pool of headless Chromium contexts; each context isolated (cookies/storage) for session mgmt.
+- Wait strategies: network-idle, selector-present, scroll-to-load (infinite scroll), timeouts.
+- Anti-detection: stealth plugin, randomized viewport/UA/timezone/locale, human-like delays,
+  WebGL/canvas noise, disable automation flags.
+- Resource blocking (images/fonts/ads) when only text is needed → faster, cheaper.
+- Session/cookie persistence for authenticated targets (credentials injected from config/secret).
+- Screenshot/DOM capture for audit.
+- Browser workers are **expensive** (CPU/RAM) → separate queue, lower concurrency, only for URLs
+  that require it.
+
+## 6. Anti-blocking toolkit
+
+| Technique | Purpose |
+|-----------|---------|
+| User-agent & header rotation | Avoid trivial UA-based blocks |
+| Proxy pool rotation (datacenter → residential later) | Distribute IPs, bypass IP bans/geo |
+| Request pacing & jitter | Mimic human timing |
+| Browser fingerprint mitigation | Defeat JS-based bot detection |
+| Session/cookie reuse | Reduce re-auth and challenge frequency |
+| CAPTCHA handling hooks | Pluggable solver integration (later) |
+| Backoff on soft-blocks | Detect block pages/redirects and cool down |
+
+Blocking is expected and continuous, especially for social. Treat evasion as an ongoing
+maintenance surface, monitored via metrics (block rate per host/platform).
+
+## 7. Discovery sources (to maximize breadth)
+
+All discovery uses **free/open** sources only (no paid search APIs — see `CLAUDE.md`):
+
+- Seed lists & sitemaps (`/sitemap.xml`, sitemap indexes).
+- Outlinks from crawled pages (recursive, scope-bounded) — the primary breadth engine.
+- RSS/Atom feeds for freshness.
+- **Common Crawl URL indexes** (free) for massive cold-start breadth — a free substitute for
+  commercial search APIs to widen the mouth of the funnel.
+- Public/free URL datasets, open directories, and web archives.
+- Platform-specific discovery (hashtags, profiles, public search endpoints) for social — via
+  free/open APIs or browser scraping, never paid data feeds.
+
+## 8. Scope & campaign configuration
+
+A **crawl campaign** config defines:
+```yaml
+name: news-tech
+seeds: [ "https://example.com" ]
+include: [ "*.example.com/*" ]        # allow rules
+exclude: [ "*/tag/*", "*.pdf$" ]      # deny rules
+max_depth: 5
+max_pages: 1_000_000
+render_js: auto                        # never | auto | always
+priority_weights: { authority: 0.4, freshness: 0.3, depth: 0.2, value: 0.1 }
+politeness: { per_host_concurrency: 4, min_delay_ms: 500, adaptive: true }
+recrawl: { cadence: "24h", strategy: conditional_get }
+```
+
+## 9. Reliability
+
+- **Idempotency:** fetching a URL twice is safe; extraction keyed by content hash.
+- **Crash recovery:** frontier is durable; in-flight URLs time out back to PENDING.
+- **Backpressure:** if the queue/index lags, fetchers slow down (bounded queue depth).
+- **Dead-letter queue** for URLs failing after max retries, with reason codes.
+
+## 10. Metrics (exported to Prometheus)
+
+- Pages fetched/sec, bytes/sec, per-host and global.
+- Frontier size, by state.
+- Fetch error rate by status code, block rate per host/platform.
+- Static vs browser fetch ratio and per-fetch latency.
+- Queue depth to the extractor and downstream lag.

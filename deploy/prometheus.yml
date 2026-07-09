@@ -1,0 +1,17 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # App services expose /metrics (Phase 1+). Harmless if down in Phase 0.
+  - job_name: crawler
+    static_configs:
+      - targets: ["crawler:8090"]
+
+  - job_name: ai-api
+    static_configs:
+      - targets: ["ai-api:8000"]

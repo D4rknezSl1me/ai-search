@@ -1,0 +1,213 @@
+# ai-search — Phase 0 infrastructure.
+#
+# Usage (from repo root):
+#   docker compose --env-file .env -f deploy/docker-compose.yml up -d              # infra only
+#   docker compose --env-file .env -f deploy/docker-compose.yml --profile app up -d # + crawler & ai-api
+#   docker compose --env-file .env -f deploy/docker-compose.yml --profile gpu up -d # + TEI + local LLM (needs NVIDIA toolkit)
+#
+# Infra services have no GPU requirement and come up on any machine.
+
+name: ai-search
+
+services:
+  # ------------------------------------------------------------------ Postgres
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports: ["${POSTGRES_PORT}:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Migrations auto-run on first init, in filename order.
+      - ../db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------- Redis
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    ports: ["${REDIS_PORT}:6379"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------- NATS
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "${NATS_PORT}:4222"
+      - "8222:8222"           # monitoring / health
+    volumes:
+      - natsdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------- Qdrant
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "${QDRANT_HTTP_PORT}:6333"
+      - "${QDRANT_GRPC_PORT}:6334"
+    volumes:
+      - qdrantdata:/qdrant/storage
+    healthcheck:
+      # Qdrant image has no curl/wget; use the built-in TCP liveness on 6333.
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------- OpenSearch
+  opensearch:
+    image: opensearchproject/opensearch:2.17.1
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+      # Bootstrap/dev: disable the security plugin (no TLS/auth). Re-enable for prod.
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_INITIAL_ADMIN_PASSWORD}
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    ports: ["${OPENSEARCH_PORT}:9200"]
+    volumes:
+      - osdata:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  # --------------------------------------------------------------------- MinIO
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "9001:9001"           # web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------- Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------- Grafana
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports: ["3000:3000"]
+    volumes:
+      - grafanadata:/var/lib/grafana
+    depends_on: [prometheus]
+    restart: unless-stopped
+
+  # ============================================================ app profile ==
+  crawler:
+    profiles: ["app"]
+    build:
+      context: ../crawler
+    env_file: ../.env
+    ports: ["${CRAWLER_HEALTH_PORT}:8090"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      nats: { condition: service_healthy }
+    restart: unless-stopped
+
+  ai-api:
+    profiles: ["app"]
+    build:
+      context: ../ai
+    env_file: ../.env
+    ports: ["${AI_API_PORT}:8000"]
+    depends_on:
+      qdrant: { condition: service_healthy }
+      opensearch: { condition: service_healthy }
+    restart: unless-stopped
+
+  # ============================================================ gpu profile ==
+  # Both GPU services require the NVIDIA Container Toolkit on the host.
+
+  # Text Embeddings Inference — batched embeddings on the GPU.
+  tei:
+    profiles: ["gpu"]
+    image: ghcr.io/huggingface/text-embeddings-inference:1.5
+    command: ["--model-id", "${EMBED_MODEL_ID}", "--port", "8080"]
+    ports: ["${TEI_PORT}:8080"]
+    volumes:
+      - teicache:/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  # Local synthesis LLM (Ollama) — NO paid API. Pull a model in Phase 2, e.g.:
+  #   docker compose ... exec llm ollama pull ${LLM_MODEL}
+  llm:
+    profiles: ["gpu"]
+    image: ollama/ollama:latest
+    ports: ["${LLM_PORT}:11434"]
+    volumes:
+      - ollamadata:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  natsdata:
+  qdrantdata:
+  osdata:
+  miniodata:
+  promdata:
+  grafanadata:
+  teicache:
+  ollamadata:
