@@ -91,6 +91,21 @@ configured), 502 (unknown/disabled adapter or a discover failure, with the parti
 echoed). Exact-dedup is by content hash (platform+post_id), so re-ingesting a post is a no-op
 insert counted under `duplicates`.
 
+### `GET · POST · DELETE /internal/social/tracked`
+Manage the **freshness registry** — the set of `(adapter, seed)` entities the crawler
+re-ingests on a cadence so time-sensitive social content stays fresh (Phase 3; see
+[08-SOCIAL-MEDIA.md](08-SOCIAL-MEDIA.md) §7). A background scheduler claims every entity whose
+cadence has elapsed each tick and re-runs the same ingest path as `POST /internal/social/ingest`;
+re-ingested posts dedupe by content hash, so keeping an entity fresh is idempotent.
+- **GET** → `{count, tracked[]}`, soonest-due first. Each entry is `{id, adapter, seed,
+  cadence_seconds, max_pages, enabled, next_due_at, last_ingested_at?, last_result?, last_error?,
+  runs, created_at}` — `last_result` is the most recent run summary and `last_error` surfaces
+  breakage (freshness-lag visibility).
+- **POST** `{adapter, seed, cadence_seconds, max_pages?}` → registers or updates one entity
+  (re-registering resets `next_due_at` to now for a prompt refresh); returns the stored row.
+  Errors: 400 (missing `adapter`/`seed`, unknown adapter, or `cadence_seconds` below the 10s floor).
+- **DELETE** `{adapter, seed}` → removes one entity; `{removed:true,…}` or 404 if not tracked.
+
 ### `GET /internal/render/queue[?campaign=…]`
 Browser render-queue counts by state (`PENDING|RENDERING|RENDERED|FAILED`) — the static→browser
 escalation lane (Phase 3; see [04-CRAWLER.md](04-CRAWLER.md) §5). Global by default; scope with

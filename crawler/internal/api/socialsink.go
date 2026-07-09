@@ -21,6 +21,13 @@ type socialSink struct {
 	blob  *blob.Store
 }
 
+// NewSocialSink builds the shared social persistence sink so callers outside the
+// API package (e.g. the freshness scheduler in main) drive ingests through the
+// exact same store+blob landing path as POST /internal/social/ingest.
+func NewSocialSink(st *store.Store, bl *blob.Store) social.Sink {
+	return &socialSink{store: st, blob: bl}
+}
+
 func (s *socialSink) Persist(ctx context.Context, d *social.NormalizedDoc) (bool, error) {
 	// Clean text first (ungated by the insert dedup), keyed by content hash —
 	// same contract as web docs so a re-ingest backfills text for known posts.

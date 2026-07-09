@@ -50,6 +50,11 @@ var (
 		Help: "Normalized social documents produced, by adapter.",
 	}, []string{"adapter"})
 
+	FreshnessRuns = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "crawler_freshness_runs_total",
+		Help: "Scheduled re-ingests of tracked social entities, by adapter and outcome.",
+	}, []string{"adapter", "result"}) // ok | error
+
 	// --- browser escalation (Phase 3) ---
 
 	RenderEscalations = promauto.NewCounterVec(prometheus.CounterOpts{

@@ -29,6 +29,49 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-07-09 — Phase 3: freshness cadence for tracked social entities
+
+**What**
+- New durable `tracked_entities` registry (`db/migrations/0004_tracked_entities.sql` +
+  `store.EnsureTrackedEntities` idempotent DDL): one row per `(adapter, seed)` carrying
+  `cadence_seconds`, a per-entity `max_pages` cap, `enabled`, a self-advancing `next_due_at`
+  timer, and `last_result`/`last_error`/`runs`/`last_ingested_at` for freshness-lag visibility.
+  Store methods: `UpsertTrackedEntity`, `ListTrackedEntities`, `DeleteTrackedEntity`,
+  `ClaimDueTracked` (advances `next_due_at` by one cadence as it claims under `FOR UPDATE SKIP
+  LOCKED` — a slow run never double-schedules), `RecordTrackedRun`.
+- New `crawler/internal/freshness` scheduler — a ticker loop that each tick claims every due
+  entity and re-runs the **shared** social ingester (`api.NewSocialSink` exported so scheduled and
+  manual `POST /internal/social/ingest` runs land through the identical store+blob path). One
+  entity's failure never stops the rest; each run's summary/error is recorded. Wired in `main.go`
+  (off when `CRAWLER_FRESHNESS_TICK_S=0`); counted by `crawler_freshness_runs_total{adapter,result}`.
+- New control endpoints `GET·POST·DELETE /internal/social/tracked` (register/list/remove) with
+  validation: unknown adapter and sub-10s cadence are rejected up front. Config knobs
+  `CRAWLER_FRESHNESS_TICK_S|BATCH`, `CRAWLER_SOCIAL_PACE_MS` (`.env.example`, compose `env_file`).
+
+**Why**
+- Last unmet Phase 3 exit criterion ("freshness cadence for tracked entities", docs/08 §7). Social
+  content is time-sensitive; a watched hashtag/profile/instance must be re-ingested on a short
+  per-entity cadence, not just on a one-shot operator trigger. Content-hash dedupe already makes
+  re-runs idempotent, so the scheduler only needs to re-drive the existing ingest path — no second,
+  drifting copy of the pipeline, and only genuinely new posts land.
+
+**Verification**
+- `go build ./... && go vet ./...` clean; unit tests pass (`internal/freshness` double-schedule
+  guard + failure-isolation; `internal/api`, `internal/social` unaffected) in a `golang:1.25`
+  container via the same `go mod tidy` path as the Dockerfile.
+- Store integration test (`tracked_integration_test.go`, `-tags integration`) green against the
+  **live** Postgres: upsert round-trip + idempotent re-upsert, due-claim returns both entities and
+  advances `next_due_at`, immediate re-claim returns nothing (double-schedule guard), run recording,
+  delete/second-delete.
+- End-to-end against the running stack (rebuilt crawler): scheduler logged `freshness scheduler
+  started (tick 30s, batch 16)`. Registered `hackernews/top` (600s) and a `mastodon` hashtag
+  (900s); within one tick the scheduler ran both — `hackernews` landed **30 inserted**, both
+  `next_due_at` advanced by their cadence, `runs=1`, `crawler_freshness_runs_total` incremented.
+  Validation verified live: unknown adapter → 400, sub-10s cadence → 400, DELETE → `removed`, second
+  DELETE → 404. Test entities removed afterward (registry back to `count:0`).
+
+---
+
 ## 2026-07-09 — Phase 3: Playwright browser-worker (render queue consumer)
 
 **What**

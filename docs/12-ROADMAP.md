@@ -85,9 +85,17 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
 - [x] Adapter health metrics + auto-disable + contract tests. `HealthTracker` + Prometheus
   metrics + contract tests + **per-adapter status endpoint** (`social.Registry` →
   `GET /internal/social/adapters[/{name}]`) all done.
+- [x] **Freshness cadence for tracked entities.** A durable `tracked_entities` registry
+  (`(adapter, seed)` + cadence + per-entity page cap, self-advancing `next_due_at`) and a
+  `internal/freshness` scheduler that claims due entities every tick and re-runs the shared social
+  ingester (dedupe makes re-runs idempotent). Managed via `GET·POST·DELETE
+  /internal/social/tracked`; runs counted by `crawler_freshness_runs_total`. Incremental
+  `since_id`/cursor fetch is a later optimization (dedupe already prevents re-indexing).
 
-**Exit criteria:** JS pages render & index; ≥3 social adapters ingesting with health monitoring;
-freshness cadence for tracked entities.
+**Exit criteria:** JS pages render & index ✅; ≥3 social adapters ingesting with health
+monitoring ✅; freshness cadence for tracked entities ✅. **Remaining P3 item:** the
+anti-detection stack (fingerprints, proxies, sessions, pacing) — the browser-worker ships a
+lightweight version today; the full stack is the last open Phase 3 task.
 
 ## Phase 4 — Scale & quality
 

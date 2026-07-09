@@ -46,6 +46,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/internal/social/adapters", s.socialAdapters) // GET (all)
 	mux.HandleFunc("/internal/social/adapters/", s.socialAdapter) // GET /.../{name}
 	mux.HandleFunc("/internal/social/ingest", s.socialIngest)     // POST
+	mux.HandleFunc("/internal/social/tracked", s.socialTracked)   // GET | POST | DELETE
 	mux.HandleFunc("/internal/render/queue", s.renderQueue)       // GET ?campaign=ID
 	mux.HandleFunc("/internal/render/claim", s.renderClaim)       // POST {"n":N}
 	mux.HandleFunc("/internal/render/complete", s.renderComplete) // POST {"id":ID,"ok":bool}
@@ -250,6 +251,95 @@ func (s *Server) socialIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// minTrackCadenceS floors the freshness cadence so an operator can't register an
+// entity that hammers a platform every second. Ten seconds is well below any
+// sensible social cadence while still preventing pathological configs.
+const minTrackCadenceS = 10
+
+type trackReq struct {
+	Adapter        string `json:"adapter"`
+	Seed           string `json:"seed"`
+	CadenceSeconds int    `json:"cadence_seconds"`
+	MaxPages       int    `json:"max_pages"`
+}
+
+// socialTracked manages the freshness registry — the set of (adapter, seed)
+// entities the crawler re-ingests on a cadence (docs/08 §7). GET lists them
+// (with each entity's schedule, last result, and last error for freshness-lag
+// visibility); POST registers/updates one; DELETE removes one. The scheduler in
+// main claims due entities from this table every tick.
+func (s *Server) socialTracked(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		entities, err := s.store.ListTrackedEntities(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if entities == nil {
+			entities = []store.TrackedEntity{}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"count": len(entities), "tracked": entities})
+
+	case http.MethodPost:
+		var req trackReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		req.Adapter, req.Seed = strings.TrimSpace(req.Adapter), strings.TrimSpace(req.Seed)
+		if req.Adapter == "" || req.Seed == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "adapter and seed are required"})
+			return
+		}
+		// Reject unknown adapters up front — a tracked entity the scheduler can
+		// never run is a silent freshness gap.
+		if s.social != nil {
+			if _, ok := s.social.Get(req.Adapter); !ok {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown adapter: " + req.Adapter})
+				return
+			}
+		}
+		if req.CadenceSeconds < minTrackCadenceS {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "cadence_seconds must be >= " + strconv.Itoa(minTrackCadenceS),
+			})
+			return
+		}
+		te, err := s.store.UpsertTrackedEntity(r.Context(), req.Adapter, req.Seed, req.CadenceSeconds, req.MaxPages)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, te)
+
+	case http.MethodDelete:
+		var req trackReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		req.Adapter, req.Seed = strings.TrimSpace(req.Adapter), strings.TrimSpace(req.Seed)
+		if req.Adapter == "" || req.Seed == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "adapter and seed are required"})
+			return
+		}
+		removed, err := s.store.DeleteTrackedEntity(r.Context(), req.Adapter, req.Seed)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		if !removed {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not tracked"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"removed": true, "adapter": req.Adapter, "seed": req.Seed})
+
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "GET, POST, or DELETE only"})
+	}
 }
 
 // renderQueue reports render-queue counts by state. Global by default, or scoped

@@ -90,6 +90,21 @@ Social content maps to the same `Document`/`Chunk` model with extra fields in `m
 - Incremental fetch via `since_id`/cursors to pull only new content.
 - Feeds the monitoring/alerts feature (saved queries notify on new matches).
 
+**Implemented (Phase 3):** a durable `tracked_entities` registry (one row per `(adapter, seed)`,
+carrying `cadence_seconds`, a per-entity `max_pages` cap, and a self-advancing `next_due_at`
+timer) plus a background scheduler (`crawler/internal/freshness`). Each tick the scheduler claims
+every entity whose cadence has elapsed — advancing `next_due_at` by one cadence as it claims, so a
+slow run never double-schedules (`FOR UPDATE SKIP LOCKED`, mirroring the frontier claim) — and
+re-runs the shared social ingester (the same store+blob landing path as `POST
+/internal/social/ingest`). Because posts exact-dedupe by content hash (`platform+post_id`),
+re-running is idempotent at the document level: only genuinely new posts land, and each run's
+summary/error is recorded on the row for freshness-lag visibility. Operators manage the registry
+via `GET·POST·DELETE /internal/social/tracked` (see [13-API.md](13-API.md) §2); runs are counted
+by `crawler_freshness_runs_total{adapter,result}`. Tunables: `CRAWLER_FRESHNESS_TICK_S` (0 =
+scheduler off), `CRAWLER_FRESHNESS_BATCH`, `CRAWLER_SOCIAL_PACE_MS`. Incremental `since_id`/cursor
+fetch remains a later optimization — dedupe already prevents re-indexing, so it only saves
+bandwidth, not index churn.
+
 ## 8. Health & metrics
 
 - Per-adapter: success rate, block/challenge rate, items/hour, freshness lag, breakage alerts.

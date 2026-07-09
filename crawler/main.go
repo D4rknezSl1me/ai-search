@@ -19,6 +19,7 @@ import (
 	"github.com/ai-search/crawler/internal/config"
 	"github.com/ai-search/crawler/internal/crawl"
 	"github.com/ai-search/crawler/internal/fetch"
+	"github.com/ai-search/crawler/internal/freshness"
 	"github.com/ai-search/crawler/internal/social"
 	"github.com/ai-search/crawler/internal/store"
 )
@@ -41,6 +42,10 @@ func main() {
 	// predate the 0003 migration, which initdb only applies on first init).
 	if err := st.EnsureRenderQueue(ctx); err != nil {
 		log.Fatalf("ensure render_queue: %v", err)
+	}
+	// Same for the tracked-entity registry (0004): the freshness scheduler needs it.
+	if err := st.EnsureTrackedEntities(ctx); err != nil {
+		log.Fatalf("ensure tracked_entities: %v", err)
 	}
 
 	log.Printf("connecting to MinIO at %s ...", cfg.MinIOEndpoint())
@@ -65,6 +70,21 @@ func main() {
 	// owner provides credentials (ralph/QUESTIONS.md).
 	socialReg := social.DefaultRegistry(cfg.UserAgent, time.Duration(cfg.FetchTimeout)*time.Second, 0)
 	log.Printf("social adapters registered: %v", socialReg.Names())
+
+	// Freshness scheduler: re-ingest tracked social entities on their per-entity
+	// cadence (docs/08 §7). It drives the same social ingester as the operator
+	// trigger, through the shared store+blob sink, so scheduled and manual runs
+	// land identically. Off when CRAWLER_FRESHNESS_TICK_S=0.
+	if cfg.FreshnessTickS > 0 {
+		sink := api.NewSocialSink(st, bl)
+		pace := time.Duration(cfg.SocialPaceMs) * time.Millisecond
+		runner := func(ctx context.Context, adapter, seed string, maxPages int) (social.Result, error) {
+			return social.NewIngester(socialReg, sink, maxPages, pace).IngestSeed(ctx, adapter, seed)
+		}
+		sched := freshness.New(st, runner, time.Duration(cfg.FreshnessTickS)*time.Second, cfg.FreshnessBatch)
+		go sched.Run(ctx)
+		log.Printf("freshness scheduler started (tick %ds, batch %d)", cfg.FreshnessTickS, cfg.FreshnessBatch)
+	}
 
 	// HTTP control/health server.
 	srv := &http.Server{
