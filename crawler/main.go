@@ -37,6 +37,12 @@ func main() {
 	}
 	defer st.Close()
 
+	// Ensure the browser render queue exists (idempotent; covers volumes that
+	// predate the 0003 migration, which initdb only applies on first init).
+	if err := st.EnsureRenderQueue(ctx); err != nil {
+		log.Fatalf("ensure render_queue: %v", err)
+	}
+
 	log.Printf("connecting to MinIO at %s ...", cfg.MinIOEndpoint())
 	bl, err := blob.New(ctx, cfg.MinIOEndpoint(), cfg.MinIOUser, cfg.MinIOPassword, cfg.MinIOBucket)
 	if err != nil {
@@ -106,6 +112,14 @@ func runReaper(ctx context.Context, st *store.Store, reapAfter time.Duration) {
 				log.Printf("reaper error: %v", err)
 			} else if n > 0 {
 				log.Printf("reaper requeued %d stuck FETCHING url(s)", n)
+			}
+			// Same treatment for the render lane: browser workers that crashed
+			// mid-render leave jobs orphaned in RENDERING.
+			rn, err := st.RequeueStuckRendering(ctx, reapAfter, crawl.MaxAttempts)
+			if err != nil {
+				log.Printf("render reaper error: %v", err)
+			} else if rn > 0 {
+				log.Printf("reaper requeued %d stuck RENDERING job(s)", rn)
 			}
 		}
 	}

@@ -73,6 +73,7 @@ curl -X POST localhost:8090/internal/campaigns -H 'Content-Type: application/jso
 curl "localhost:8090/internal/frontier?campaign=1"   # crawl progress by state
 curl localhost:8090/internal/coverage                # total documents indexed
 curl localhost:8090/internal/documents/1             # a document's metadata
+curl "localhost:8090/internal/render/queue"          # browser render queue by state (Phase 3)
 curl localhost:8090/metrics                           # Prometheus crawl metrics
 ```
 

@@ -59,11 +59,16 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
 
 **Goal:** cover dynamic and social content.
 
-- [~] Playwright browser-worker pool + static→browser escalation. **Escalation gate done**
-  (`crawler/internal/render` — `never|auto|always` policy + JS-app heuristics: sparse extracted
-  text combined with SPA root markers / framework bundles / noscript prompts; wired into the
-  scheduler, stamped into `documents.meta.needs_render` + `render_reasons`, counted via
-  `crawler_render_escalations_total`). The Playwright pool that consumes these flags is pending.
+- [~] Playwright browser-worker pool + static→browser escalation. **Escalation gate + durable
+  render queue done.** Gate: `crawler/internal/render` (`never|auto|always` policy + JS-app
+  heuristics: sparse extracted text combined with SPA root markers / framework bundles / noscript
+  prompts; wired into the scheduler, stamped into `documents.meta.needs_render` + `render_reasons`,
+  counted via `crawler_render_escalations_total`). Queue: a frontier-shaped `render_queue` table
+  (`PENDING→RENDERING→RENDERED|FAILED`, claim/lease/retry + stuck-render reaper) that the escalation
+  gate enqueues into, exposed over the control API (`GET /internal/render/queue`,
+  `POST /internal/render/claim`, `POST /internal/render/complete`) for a separate-language
+  headless-browser service to consume. The actual Playwright worker process (fetch→re-extract→
+  re-index the claimed URL) is the remaining piece.
 - [ ] Anti-detection stack (fingerprints, proxies, sessions, pacing).
 - [~] Social adapters, easy/open first (Reddit, Mastodon, Telegram public, YouTube transcripts),
   then hostile platforms. **Mastodon + Hacker News + Lemmy adapters done** (three credential-free

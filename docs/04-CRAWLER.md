@@ -68,6 +68,14 @@ For JS-rendered and social content ([08-SOCIAL-MEDIA.md](08-SOCIAL-MEDIA.md)).
 - Browser workers are **expensive** (CPU/RAM) → separate queue, lower concurrency, only for URLs
   that require it.
 
+**Render queue (implemented).** The escalation gate enqueues flagged URLs into a durable
+`render_queue` table (frontier-shaped: `PENDING → RENDERING → RENDERED | FAILED`, priority,
+attempts, `claimed_at` lease). The browser pool is a separate-language service that consumes it
+over the control API — `POST /internal/render/claim` (lease a batch), `POST /internal/render/complete`
+(report `RENDERED` / retryable failure), `GET /internal/render/queue` (depth by state). Jobs
+orphaned in `RENDERING` (crashed worker) are requeued by the same reaper that guards the frontier.
+The worker process itself (headless fetch → re-extract → re-index) is not yet built.
+
 ## 6. Anti-blocking toolkit
 
 | Technique | Purpose |

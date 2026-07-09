@@ -56,6 +56,21 @@ var (
 		Name: "crawler_render_escalations_total",
 		Help: "Static fetches flagged as needing browser rendering, by reason.",
 	}, []string{"reason"})
+
+	RenderQueueEnqueued = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "crawler_render_queue_enqueued_total",
+		Help: "URLs newly enqueued into the browser render queue.",
+	})
+
+	RenderQueueClaimed = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "crawler_render_queue_claimed_total",
+		Help: "Render jobs claimed by browser workers.",
+	})
+
+	RenderQueueCompleted = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "crawler_render_queue_completed_total",
+		Help: "Render jobs completed, by outcome.",
+	}, []string{"result"}) // rendered | failed
 )
 
 // StatusClass maps an HTTP status code to a coarse class label.

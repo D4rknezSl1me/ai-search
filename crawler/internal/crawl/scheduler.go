@@ -172,6 +172,15 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 		for _, r := range decision.Reasons {
 			metrics.RenderEscalations.WithLabelValues(r).Inc()
 		}
+		// Durable hand-off: enqueue the URL for the browser-worker pool. Shallower
+		// pages render first (same priority shape as frontier discovery).
+		renderPriority := 1.0 / float64(item.Depth+1)
+		if added, err := s.store.EnqueueRender(ctx, item.CampaignID, item.URL,
+			urlx.Hash(item.URL), item.Host, renderPriority, decision.Reasons); err != nil {
+			log.Printf("render enqueue error: %v", err)
+		} else if added {
+			metrics.RenderQueueEnqueued.Inc()
+		}
 	}
 
 	sourceID, _ := s.store.EnsureSource(ctx, item.Host)

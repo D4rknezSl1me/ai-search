@@ -19,9 +19,59 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   counts; prune stale chunks when a doc is re-chunked to fewer pieces.
 - [ ] **max_pages best-effort overshoot** — tighten the concurrent cap if it matters.
 - [ ] Non-HTML parsing (PDF/doc) and JS/social rendering are phase-tracked (Phase 3), not backlog.
-- [ ] **Playwright browser-worker pool** — consume `documents.meta.needs_render` (set by the
-  escalation gate below): a separate low-concurrency render queue that re-fetches flagged URLs
-  with a headless browser, then re-extracts/re-indexes. Anti-detection stack rides on this.
+- [~] **Playwright browser-worker pool** — **render queue done** (2026-07-09, see entry below):
+  the escalation gate now enqueues flagged URLs into a durable `render_queue` with claim/lease/retry
+  + reaper, exposed over the control API. The remaining piece is the actual headless-browser worker
+  process (a separate-language service) that claims jobs, re-fetches with a browser, and
+  re-extracts/re-indexes. Anti-detection stack rides on that.
+
+---
+
+## 2026-07-09 — Phase 3: durable browser render queue (escalation gate → pool hand-off)
+
+**What**
+- New `render_queue` table (`db/migrations/0003_render_queue.sql`) — a frontier-shaped work queue
+  for the headless-browser path: `PENDING → RENDERING → RENDERED | FAILED`, with `priority`,
+  `attempts`, `next_attempt`, a `claimed_at` lease, JSONB escalation `reasons`, and
+  `UNIQUE (url_hash, campaign_id)`. The escalation gate previously only stamped
+  `documents.meta.needs_render`, which is an observability flag with no claim/lease/retry semantics;
+  this is the actual queue the (separate-language) Playwright pool consumes.
+- New `crawler/internal/store/render.go` — `EnsureRenderQueue` (idempotent DDL run at startup so the
+  feature works on volumes predating the migration), `EnqueueRender` (dedup via ON CONFLICT DO
+  NOTHING), `ClaimNextRender` (atomic `FOR UPDATE SKIP LOCKED` claim of the top-N by priority),
+  `MarkRendered`, `MarkRenderFailed` (retry→PENDING under the cap, else FAILED — mirrors the
+  frontier), `RequeueStuckRendering` (reaper for crashed workers), and `RenderQueueStats`
+  (per-campaign or global).
+- Producer wiring: `crawl/scheduler.go` now enqueues escalated URLs (priority `1/(depth+1)`) and
+  increments `crawler_render_queue_enqueued_total`. `main.go` calls `EnsureRenderQueue` at boot and
+  the existing reaper now also requeues stuck `RENDERING` jobs.
+- Consumer/observability API (`internal/api/api.go`): `GET /internal/render/queue[?campaign=…]`,
+  `POST /internal/render/claim` (`{n?}` → leased batch), `POST /internal/render/complete`
+  (`{id, ok, retry?}`). New metrics `crawler_render_queue_{enqueued,claimed,completed}_total`.
+  `POST /internal/campaigns` now accepts `render_js` so the escalation policy is operator-settable.
+
+**Why**
+- Phase 3's browser half needs a durable producer→consumer boundary before the (expensive,
+  separate-language — docs/02) Playwright worker exists. Building the queue first means the worker
+  becomes a thin consumer of a proven, observable signal rather than a big-bang addition, and the
+  crawler owns the state machine (claim/lease/retry/crash-recovery) in one place. Bias-to-recall:
+  every escalated URL is durably captured for later rendering.
+
+**Verification**
+- `go build ./...`, `go vet ./...`, `go test ./...` all clean in a `golang:1.25-alpine` container
+  (same toolchain as the crawler Dockerfile).
+- New build-tagged integration test (`store/render_integration_test.go`, `-tags integration`) run
+  against the **live Postgres**: enqueue + dedup, priority-ordered top-N claim, reasons round-trip,
+  RENDERED/FAILED transitions, drained-queue stats → `PASS`.
+- Live end-to-end against the running stack: rebuilt the crawler, then
+  (a) **producer** — created a campaign with `render_js=always` seeded at `https://example.com/`;
+  the crawl escalated (`crawler_render_escalations_total{reason="mode=always"} 1`) and enqueued
+  (`crawler_render_queue_enqueued_total 1`, queue `PENDING:1` for the campaign);
+  (b) **consumer** — `claim {n:2}` → `RENDERING:2`; `complete ok=true` → `RENDERED`; `complete
+  ok=false` → retried back to `PENDING`; metrics `claimed_total 2`, `completed{rendered=1,failed=1}`.
+- **Bug found & fixed during verification:** `ClaimNextRender` scanned the nullable `campaign_id`
+  into `*int64` and errored on NULL rows (leaving them stuck in `RENDERING`); fixed with
+  `COALESCE(campaign_id, 0)` and re-verified.
 
 ---
 

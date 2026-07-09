@@ -91,6 +91,20 @@ configured), 502 (unknown/disabled adapter or a discover failure, with the parti
 echoed). Exact-dedup is by content hash (platform+post_id), so re-ingesting a post is a no-op
 insert counted under `duplicates`.
 
+### `GET /internal/render/queue[?campaign=…]`
+Browser render-queue counts by state (`PENDING|RENDERING|RENDERED|FAILED`) — the static→browser
+escalation lane (Phase 3; see [04-CRAWLER.md](04-CRAWLER.md) §5). Global by default; scope with
+`?campaign=ID`. Returns `{campaign_id, render_queue{state: count}}`.
+
+### `POST /internal/render/claim` · `POST /internal/render/complete`
+Lease/complete API for the (separate-language) headless-browser worker pool that consumes the
+render queue. `claim` body `{n?}` (default 1, max 100) marks up to `n` PENDING jobs `RENDERING`
+under a `claimed_at` lease and returns `{claimed, items[]}`, each item `{id, url, host,
+campaign_id, reasons[], attempts}`. `complete` body `{id, ok, retry?}` records the outcome:
+`ok=true` → `RENDERED`; `ok=false` → failure, rescheduled to `PENDING` after a backoff up to the
+retry cap (default `retry=true`) else `FAILED`. Jobs left un-completed past the reaper timeout
+are requeued from `RENDERING` back to `PENDING` (crash recovery, mirroring the frontier).
+
 ### `GET /metrics`
 Prometheus exposition (all services).
 

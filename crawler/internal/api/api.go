@@ -8,13 +8,21 @@ import (
 	"strconv"
 	"strings"
 
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/ai-search/crawler/internal/blob"
+	"github.com/ai-search/crawler/internal/crawl"
+	"github.com/ai-search/crawler/internal/metrics"
 	"github.com/ai-search/crawler/internal/social"
 	"github.com/ai-search/crawler/internal/store"
 	"github.com/ai-search/crawler/internal/urlx"
 )
+
+// renderRetryBackoff spaces out re-render attempts after a browser worker
+// reports a retryable failure.
+const renderRetryBackoff = 60 * time.Second
 
 type Server struct {
 	store  *store.Store
@@ -38,6 +46,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/internal/social/adapters", s.socialAdapters) // GET (all)
 	mux.HandleFunc("/internal/social/adapters/", s.socialAdapter) // GET /.../{name}
 	mux.HandleFunc("/internal/social/ingest", s.socialIngest)     // POST
+	mux.HandleFunc("/internal/render/queue", s.renderQueue)       // GET ?campaign=ID
+	mux.HandleFunc("/internal/render/claim", s.renderClaim)       // POST {"n":N}
+	mux.HandleFunc("/internal/render/complete", s.renderComplete) // POST {"id":ID,"ok":bool}
 	return mux
 }
 
@@ -78,6 +89,7 @@ type createCampaignReq struct {
 	MaxPages      int      `json:"max_pages"`
 	AllowExternal bool     `json:"allow_external"`
 	MinDelayMs    int      `json:"min_delay_ms"`
+	RenderJS      string   `json:"render_js"` // never | auto | always (empty ⇒ auto)
 }
 
 func (s *Server) createCampaign(w http.ResponseWriter, r *http.Request) {
@@ -105,6 +117,7 @@ func (s *Server) createCampaign(w http.ResponseWriter, r *http.Request) {
 		MaxPages:      req.MaxPages,
 		AllowExternal: req.AllowExternal,
 		MinDelayMs:    req.MinDelayMs,
+		RenderJS:      req.RenderJS,
 	}
 	campaignID, err := s.store.UpsertCampaign(ctx, req.Name, cfg)
 	if err != nil {
@@ -236,6 +249,105 @@ func (s *Server) socialIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// renderQueue reports render-queue counts by state. Global by default, or scoped
+// to a campaign with ?campaign=ID. This is the observability surface for the
+// static→browser escalation lane (docs/04 §5, §10).
+func (s *Server) renderQueue(w http.ResponseWriter, r *http.Request) {
+	var campaignID int64
+	if v := r.URL.Query().Get("campaign"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid campaign id"})
+			return
+		}
+		campaignID = id
+	}
+	stats, err := s.store.RenderQueueStats(r.Context(), campaignID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"campaign_id": campaignID, "render_queue": stats})
+}
+
+type renderClaimReq struct {
+	N int `json:"n"`
+}
+
+// renderClaim hands a batch of PENDING render jobs to a browser worker, marking
+// them RENDERING under a lease (claimed_at). The browser-worker pool is a
+// separate-language service (docs/02) that consumes this over HTTP; the crawler
+// owns the queue. Jobs not completed before the reaper's timeout are requeued.
+func (s *Server) renderClaim(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST only"})
+		return
+	}
+	req := renderClaimReq{N: 1}
+	// Body is optional; default to a single job when absent/blank.
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+	if req.N <= 0 {
+		req.N = 1
+	}
+	if req.N > 100 {
+		req.N = 100
+	}
+	items, err := s.store.ClaimNextRender(r.Context(), req.N)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	metrics.RenderQueueClaimed.Add(float64(len(items)))
+	if items == nil {
+		items = []store.RenderItem{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"claimed": len(items), "items": items})
+}
+
+type renderCompleteReq struct {
+	ID    int64 `json:"id"`
+	OK    bool  `json:"ok"`
+	Retry bool  `json:"retry"` // on failure, whether to reschedule (default: retry)
+}
+
+// renderComplete records the outcome of a claimed render job. ok=true marks it
+// RENDERED; ok=false marks a failure, retrying (up to crawl.MaxAttempts) unless
+// the worker explicitly opts out. Idempotent-ish: completing an unknown id is a
+// no-op update.
+func (s *Server) renderComplete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST only"})
+		return
+	}
+	req := renderCompleteReq{Retry: true}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.ID <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id is required"})
+		return
+	}
+	ctx := r.Context()
+	if req.OK {
+		if err := s.store.MarkRendered(ctx, req.ID); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		metrics.RenderQueueCompleted.WithLabelValues("rendered").Inc()
+		writeJSON(w, http.StatusOK, map[string]any{"id": req.ID, "state": "RENDERED"})
+		return
+	}
+	if err := s.store.MarkRenderFailed(ctx, req.ID, req.Retry, crawl.MaxAttempts, renderRetryBackoff); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	metrics.RenderQueueCompleted.WithLabelValues("failed").Inc()
+	writeJSON(w, http.StatusOK, map[string]any{"id": req.ID, "ok": false, "retry": req.Retry})
 }
 
 // socialAdapter reports one adapter's health by name.
