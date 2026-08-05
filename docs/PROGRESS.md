@@ -29,6 +29,63 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-05 — Phase 3: proxy pool (last anti-detection task → Phase 3 complete)
+
+**What**
+- New `browser-worker/src/proxies.ts` — the egress-distribution half of the docs/04 §5/§6
+  anti-detection stack, the last open Phase 3 item. The pool is fed a list of the owner's **own**
+  self-run proxies via config (`RENDER_PROXIES` inline and/or `RENDER_PROXY_FILE`) — **no paid
+  provider** (CLAUDE.md rule 2). `parseProxies`/`parseProxyLine` accept `scheme://[user:pass@]host:port`
+  (bare `host:port` ⇒ `http://`), pull credentials out into Playwright's separate `username`/`password`
+  (they never ride in `server`), skip `#` comments/blank/junk lines, and dedupe by server.
+- **Coherence with sessions is the design constraint:** a warm cookie jar + pinned fingerprint that
+  suddenly speaks from a new IP is itself a bot tell. So a proxy is **pinned per host** (the same
+  boundary `sessions.ts` uses) — a host keeps one egress IP while that proxy is healthy. Health is
+  tracked per proxy: consecutive failures push it into a **capped exponential cooldown**
+  (`RENDER_PROXY_COOLDOWN_MS` base, doubling, capped at `RENDER_PROXY_MAX_COOLDOWN_MS`); a success
+  clears the streak + cooldown. Selection prefers the **least-loaded healthy** proxy (round-robin
+  tiebreak) so assignments spread evenly; a host pinned to a proxy that enters cooldown is repinned
+  to a healthy one, and if *every* proxy is benched the pool still returns the one recovering
+  soonest rather than failing the render (recall-first). Empty pool ⇒ direct connection (unchanged).
+- Wiring: `config.ts` parses the list (inline + optional file, synchronous, missing file non-fatal)
+  and adds `proxies`/`proxyCooldownMs`/`proxyMaxCooldownMs`. `renderer.ts` builds the pool, launches
+  Chromium with the **`per-context` proxy sentinel** (Chromium only honours a per-context proxy when
+  the browser is launched with a proxy reserved), acquires a proxy per host keyed by
+  `SessionStore.keyFor(url)`, passes `proxy` to `newContext`, and reports the outcome
+  (success on a completed navigation, failure on a thrown nav/timeout → cooldown). New metrics
+  `browserworker_proxy_{selected,failed}_total` + `browserworker_proxy_{healthy,pool_size}` gauges.
+- `.env.example` documents the four `RENDER_PROXY*` knobs; `deploy/docker-compose.yml` notes the
+  env-driven list and a commented `config/proxies.txt` mount for the file form.
+
+**Why**
+- Closes the anti-detection stack and the last Phase 3 exit criterion. A single machine's IP is a
+  fingerprint every target shares across all renders; distributing egress across the owner's own
+  proxies — while keeping each host's IP stable to stay coherent with its warm session — reduces
+  IP-based blocks/geo-walls (recall-first, per the north star) without any paid dependency.
+
+**Verification**
+- `npm run typecheck` clean; production `npm run build` clean → `dist/proxies.js` ships (test excluded).
+- `npm test` green — **21/21** (10 new proxy tests + the prior 11): line/list parsing (creds split
+  out, scheme defaults, junk/comment drop, dedupe), empty pool ⇒ no lease, per-host pin stability
+  across visits, least-loaded spread across hosts, failure → cooldown → recovery, exponential backoff
+  capped, success clears the streak, reassign-off-a-benched-proxy, and the all-benched best-effort
+  fallback.
+- **Real-Chromium end-to-end:** drove the *actual* code path (`loadConfig` parses `RENDER_PROXIES`
+  → `ProxyPool` → `Renderer` launches with the `per-context` sentinel → `newContext({ proxy })`)
+  against a local forward proxy + a LAN-bound target (Chromium bypasses the proxy for loopback, so
+  the target used the host's LAN IP). The proxy **recorded the target hit** (traffic provably
+  transited the pool, not a direct connection), the rendered DOM came back (status 200, marker text
+  present), and `browserworker_proxy_{selected=1,healthy=1,pool_size=1}` incremented. Scratch
+  harness removed afterward.
+- `docker compose --profile app config` valid with the new env/mount.
+
+**Status:** **Phase 3 complete.** JS render+index, ≥3 social adapters with health monitoring,
+freshness cadence, and the full anti-detection stack (fingerprints + pacing + sessions + proxy pool)
+are all done and verified. Next: Phase 4 — Scale & quality. Credential-walled social adapters
+(Reddit/Telegram) remain deferred on owner-provided creds.
+
+---
+
 ## 2026-07-09 — Phase 3: browser fingerprint hardening + human-like pacing
 
 **What**

@@ -56,6 +56,10 @@ export const metrics = {
   sessionCreated: new Counter("browserworker_session_created_total", "New per-host sessions minted (no prior state)."),
   sessionResumed: new Counter("browserworker_session_resumed_total", "Renders that resumed an existing per-host session."),
   sessionRotated: new Counter("browserworker_session_rotated_total", "Sessions rotated after exceeding their TTL."),
+  proxySelected: new Counter("browserworker_proxy_selected_total", "Renders routed through a pooled proxy."),
+  proxyFailed: new Counter("browserworker_proxy_failed_total", "Renders whose proxy connection failed (fed into cooldown)."),
+  proxyHealthy: new Gauge("browserworker_proxy_healthy", "Configured proxies not currently in cooldown."),
+  proxyPoolSize: new Gauge("browserworker_proxy_pool_size", "Total configured proxies."),
 };
 
 export function renderMetrics(): string {
@@ -70,6 +74,10 @@ export function renderMetrics(): string {
     metrics.sessionCreated,
     metrics.sessionResumed,
     metrics.sessionRotated,
+    metrics.proxySelected,
+    metrics.proxyFailed,
+    metrics.proxyHealthy,
+    metrics.proxyPoolSize,
   ]
     .map((m) => m.render())
     .join("\n");

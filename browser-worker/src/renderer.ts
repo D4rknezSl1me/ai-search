@@ -1,16 +1,18 @@
 // Headless Chromium renderer. Owns one long-lived browser; each job runs in its
 // own context so sessions never bleed between *targets* (contexts are keyed and
-// isolated per host). Anti-detection is the fingerprint half of docs/04 §5: every
-// context gets one internally-consistent identity (see fingerprint.ts) plus
-// human-like pacing. When sessions are enabled, that identity and the cookie jar
-// are pinned per host and persisted (see sessions.ts) so return visits resume a
-// warm, coherent session — the substrate authenticated targets need. Proxies
-// remain the last open Phase 3 task.
+// isolated per host). Anti-detection is the full docs/04 §5 stack: every context
+// gets one internally-consistent identity (see fingerprint.ts) plus human-like
+// pacing. When sessions are enabled, that identity and the cookie jar are pinned
+// per host and persisted (see sessions.ts) so return visits resume a warm,
+// coherent session. When a proxy pool is configured, egress is routed through a
+// self-run proxy pinned to the same host (see proxies.ts) so a warm session keeps
+// a stable IP — completing the anti-detection stack.
 
 import { type Browser, type BrowserContext, type Page, chromium } from "playwright";
 import type { Config } from "./config.js";
 import { buildIdentity, contextOptions, stealthInit, stealthPayload } from "./fingerprint.js";
 import { metrics } from "./metrics.js";
+import { ProxyPool, type ProxyLease } from "./proxies.js";
 import { SessionStore, type SessionHandle, type StorageState } from "./sessions.js";
 
 export interface RenderOutput {
@@ -30,16 +32,31 @@ function jitter(min: number, max: number): number {
 export class Renderer {
   private browser: Browser | null = null;
   private readonly sessions: SessionStore | null;
+  private readonly proxies: ProxyPool | null;
 
   constructor(private readonly cfg: Config) {
     this.sessions = cfg.sessions
       ? new SessionStore({ dir: cfg.sessionDir, ttlMs: cfg.sessionTtlMs })
       : null;
+    this.proxies =
+      cfg.proxies.length > 0
+        ? new ProxyPool({
+            entries: cfg.proxies,
+            cooldownMs: cfg.proxyCooldownMs,
+            maxCooldownMs: cfg.proxyMaxCooldownMs,
+          })
+        : null;
+    if (this.proxies) metrics.proxyPoolSize.set(this.proxies.size);
   }
 
   async start(): Promise<void> {
     this.browser = await chromium.launch({
       headless: true,
+      // Chromium only honours a *per-context* proxy if the browser is launched
+      // with a proxy set; the "per-context" sentinel reserves that override so
+      // each newContext({ proxy }) picks its own egress. Omitted when no pool is
+      // configured, so the direct-connection path is unchanged.
+      ...(this.proxies ? { proxy: { server: "per-context" } } : {}),
       // Drop the most obvious automation tells.
       args: [
         "--disable-blink-features=AutomationControlled",
@@ -65,11 +82,22 @@ export class Renderer {
     const identity = handle ? handle.identity : buildIdentity();
     const seedState = handle ? handle.storageState : undefined;
 
+    // Route egress through a self-run proxy pinned to this host, so a warm
+    // session keeps a stable IP. No pool configured ⇒ direct connection.
+    const proxy: ProxyLease | null = this.proxies
+      ? this.proxies.acquire(SessionStore.keyFor(url))
+      : null;
+    if (proxy) {
+      metrics.proxySelected.inc();
+      metrics.proxyHealthy.set(this.proxies!.healthyCount());
+    }
+
     const context: BrowserContext = await this.browser.newContext({
       ...contextOptions(identity),
       // storageState seeds cookies + localStorage so the site sees a returning
       // browser. Empty ⇒ a clean first visit.
       ...(seedState ? { storageState: seedState as never } : {}),
+      ...(proxy ? { proxy: proxy.option } : {}),
     });
     await context.addInitScript(stealthInit, stealthPayload(identity));
 
@@ -103,6 +131,8 @@ export class Renderer {
       }
 
       const html = await page.content();
+      // Navigation succeeded through the proxy → mark it healthy.
+      if (proxy) proxy.report(true);
       // Persist the cookie jar as the site left it, so the next visit resumes it.
       if (handle) {
         const nextState = (await context.storageState()) as unknown as StorageState;
@@ -114,6 +144,12 @@ export class Renderer {
         status: response?.status() ?? 0,
       };
     } catch (err) {
+      // Never reached the page — count the proxy against its health so a dead
+      // proxy cools down and the host is repinned to a live one next time.
+      if (proxy) {
+        proxy.report(false);
+        metrics.proxyFailed.inc();
+      }
       // Failed render: unlock the host without persisting a half-baked jar.
       if (handle) await handle.release();
       throw err;

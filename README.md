@@ -109,10 +109,10 @@ docker run --rm --network ai-search_default -v "$PWD/ai/eval:/eval" -w /eval \
 - [x] **Phase 1 — Crawler MVP** (frontier, politeness scheduler, fetch/extract/dedup, control API)
 - [x] **Phase 2 — Search/RAG API** (chunk/embed/index, hybrid retrieve + RRF + rerank, cited
   local-LLM synthesis, eval harness)
-- [~] Phase 3 — JS + social fetching (in progress: Playwright browser-worker + escalation/render
-  queue; 3 credential-free adapters — Mastodon, Hacker News, Lemmy — with health monitoring;
-  freshness cadence for tracked entities; anti-detection: coherent fingerprints + human-like
-  pacing + per-host session/cookie persistence. Remaining: proxy pool)
+- [x] **Phase 3 — JS + social fetching** (Playwright browser-worker + escalation/render queue;
+  3 credential-free adapters — Mastodon, Hacker News, Lemmy — with health monitoring; freshness
+  cadence for tracked entities; full anti-detection stack: coherent fingerprints + human-like
+  pacing + per-host session/cookie persistence + per-host pinned self-run proxy pool)
 - [ ] Phase 4 — Scale & quality
 - [ ] Phase 5 — Web UI
 

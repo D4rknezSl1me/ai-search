@@ -55,7 +55,7 @@ persisted; crawl dashboard live; target throughput demonstrated on a sample.
 **Exit criteria (met):** end-to-end query → cited answer; recall@5/10 = 1.0, nDCG@10 = 0.91,
 citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation paths verified.
 
-## Phase 3 — JS + Social ingestion  ⬅️ in progress
+## Phase 3 — JS + Social ingestion  ✅ done
 
 **Goal:** cover dynamic and social content.
 
@@ -73,8 +73,8 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
   long-lived Chromium that claims jobs, renders with a real browser (fresh isolated context per job,
   rotated viewport/locale/UA, lazy-load auto-scroll), and POSTs the resolved DOM to the ingest
   endpoint; verified live rendering a real Wikipedia SPA into the index.
-- [~] Anti-detection stack (fingerprints, proxies, sessions, pacing). **Fingerprints +
-  pacing + sessions done**: each render draws one internally-consistent identity (`browser-worker/src/fingerprint.ts`)
+- [x] Anti-detection stack (fingerprints, proxies, sessions, pacing). **All four done.**
+  Fingerprints + pacing + sessions: each render draws one internally-consistent identity (`browser-worker/src/fingerprint.ts`)
   — OS profile, region (locale+timezone+Accept-Language), Chrome version, hardware — and derives the
   UA, matching `Sec-CH-UA` client hints, and a stealth init-script (webdriver, `window.chrome`,
   `navigator.userAgentData`/high-entropy hints, plugins, WebGL vendor/renderer, `permissions.query`)
@@ -85,7 +85,12 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
   persisted to the `sessionsdata` volume so warm/authenticated sessions survive restarts; return
   visits resume the same identity + jar, same-host renders are serialized (no jar race), and
   sessions rotate past a TTL. Verified end-to-end in a real Chromium (a cookie set on the first
-  render is replayed on the return visit) and by unit tests. **Remaining: proxy pool.**
+  render is replayed on the return visit) and by unit tests. **Proxy pool done**
+  (`browser-worker/src/proxies.ts`): egress is distributed across the owner's own self-run proxies
+  (`RENDER_PROXIES`/`RENDER_PROXY_FILE` — no paid provider), each **pinned per host** so a warm
+  session keeps a stable IP; failing proxies back off (capped exponential cooldown) and their hosts
+  repin to a healthy one; least-loaded selection spreads assignments. Verified end-to-end in a real
+  Chromium (a render's traffic provably transited the pooled proxy) and by unit tests.
 - [~] Social adapters, easy/open first (Reddit, Mastodon, Telegram public, YouTube transcripts),
   then hostile platforms. **Mastodon + Hacker News + Lemmy adapters done** (three credential-free
   open APIs — the ≥3-adapter exit bar is met on the ingestion side); Reddit/Telegram need
@@ -104,12 +109,11 @@ citation accuracy = 1.0, groundedness = 0.75 on the sample set; degradation path
   /internal/social/tracked`; runs counted by `crawler_freshness_runs_total`. Incremental
   `since_id`/cursor fetch is a later optimization (dedupe already prevents re-indexing).
 
-**Exit criteria:** JS pages render & index ✅; ≥3 social adapters ingesting with health
-monitoring ✅; freshness cadence for tracked entities ✅. **Remaining P3 item:** the
-anti-detection stack — **fingerprints + pacing + session/cookie persistence are done** (coherent
-per-render identity + client hints + stealth patches + human-like pacing + per-host pinned identity
-and persisted cookie jar, all verified in a real browser); the **proxy pool** is the last open
-Phase 3 task.
+**Exit criteria (met):** JS pages render & index ✅; ≥3 social adapters ingesting with health
+monitoring ✅; freshness cadence for tracked entities ✅; anti-detection stack complete ✅ —
+coherent per-render identity + client hints + stealth patches + human-like pacing + per-host pinned
+identity and persisted cookie jar + **per-host pinned self-run proxy pool with health-tracked
+cooldown**, all verified in a real browser. **Phase 3 done.**
 
 ## Phase 4 — Scale & quality
 

@@ -178,9 +178,15 @@ services:
       # Per-host session state (pinned identity + cookie jar) lives on a volume so
       # warm/authenticated sessions survive worker restarts (docs/04 §5, §6).
       RENDER_SESSION_DIR: "/data/sessions"
+      # Proxy pool (docs/04 §5/§6): set RENDER_PROXIES in .env (comma/line list of
+      # the owner's OWN proxies — no paid provider, CLAUDE.md rule 2). For a longer
+      # list, mount a file and point RENDER_PROXY_FILE at it (commented below).
+      # Empty ⇒ direct connection.
     ports: ["${WORKER_HEALTH_PORT:-8091}:8091"]
     volumes:
       - sessionsdata:/data/sessions
+      # Optional proxy list file — uncomment and set RENDER_PROXY_FILE=/config/proxies.txt
+      # - ../config/proxies.txt:/config/proxies.txt:ro
     depends_on:
       crawler: { condition: service_started }
     restart: unless-stopped

@@ -2,6 +2,9 @@
 // it slots into the same .env-driven compose stack as the crawler. Every value
 // has a safe default; nothing here is a secret.
 
+import { readFileSync } from "node:fs";
+import { type ProxyEntry, parseProxies } from "./proxies.js";
+
 function num(name: string, def: number): number {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") return def;
@@ -18,6 +21,23 @@ function bool(name: string, def: boolean): boolean {
   const raw = process.env[name];
   if (raw === undefined || raw.trim() === "") return def;
   return /^(1|true|yes|on)$/i.test(raw.trim());
+}
+
+// Load the proxy list from an inline env var and/or a file (one entry per line).
+// Both are self-run proxies supplied by the owner — no paid provider (CLAUDE.md
+// rule 2). Reading the file synchronously here keeps loadConfig() a pure sync
+// snapshot; a missing/unreadable file is non-fatal (empty ⇒ direct connection).
+function loadProxies(): ProxyEntry[] {
+  let raw = str("RENDER_PROXIES", "");
+  const file = str("RENDER_PROXY_FILE", "");
+  if (file) {
+    try {
+      raw = `${raw}\n${readFileSync(file, "utf8")}`;
+    } catch {
+      // Absent/unreadable proxy file → fall back to whatever the env var carried.
+    }
+  }
+  return parseProxies(raw);
 }
 
 export interface Config {
@@ -51,6 +71,12 @@ export interface Config {
   sessionDir: string;
   /** Rotate a host's identity + jar once it is older than this (ms). */
   sessionTtlMs: number;
+  /** Self-run proxies to distribute egress across (empty ⇒ direct connection). */
+  proxies: ProxyEntry[];
+  /** Base cooldown after a proxy failure (ms); doubles per consecutive fail. */
+  proxyCooldownMs: number;
+  /** Cap on a proxy's exponential cooldown (ms). */
+  proxyMaxCooldownMs: number;
 }
 
 export function loadConfig(): Config {
@@ -71,5 +97,8 @@ export function loadConfig(): Config {
     sessionDir: str("RENDER_SESSION_DIR", "/data/sessions"),
     // Default: rotate a host's identity + cookie jar once a day.
     sessionTtlMs: Math.max(0, num("RENDER_SESSION_TTL_MS", 86_400_000)),
+    proxies: loadProxies(),
+    proxyCooldownMs: Math.max(0, num("RENDER_PROXY_COOLDOWN_MS", 30_000)),
+    proxyMaxCooldownMs: Math.max(0, num("RENDER_PROXY_MAX_COOLDOWN_MS", 300_000)),
   };
 }

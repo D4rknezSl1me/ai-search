@@ -73,6 +73,17 @@ For JS-rendered and social content ([08-SOCIAL-MEDIA.md](08-SOCIAL-MEDIA.md)).
   identity + empty jar) past a configurable TTL so no pair becomes a permanent tracking signal.
   An injected login cookie for a host simply lands in this jar and is reused thereafter — the
   substrate authenticated targets need. Metrics: `browserworker_session_{created,resumed,rotated}_total`.
+- Proxy pool for egress distribution. **Implemented** (`browser-worker/src/proxies.ts`): the pool
+  is fed a list of the owner's **own** self-run proxies via config (`RENDER_PROXIES` inline and/or
+  `RENDER_PROXY_FILE`) — no paid provider (CLAUDE.md rule 2). A proxy is **pinned per host** (the
+  same boundary sessions use) so a warm cookie jar + fingerprint keeps a **stable egress IP** —
+  changing IP under a warm session is itself a tell. Health is tracked per proxy: consecutive
+  failures push it into a **capped exponential cooldown** (a success clears it); selection prefers
+  the least-loaded healthy proxy so assignments spread evenly, and a host pinned to a proxy that
+  enters cooldown is repinned to a healthy one (recall-first: reaching content beats holding a dead
+  IP). Empty pool ⇒ direct connection. Chromium is launched with the `per-context` proxy sentinel so
+  each context binds its own egress. Metrics: `browserworker_proxy_{selected,failed}_total`,
+  `browserworker_proxy_{healthy,pool_size}`.
 - Screenshot/DOM capture for audit.
 - Browser workers are **expensive** (CPU/RAM) → separate queue, lower concurrency, only for URLs
   that require it.
@@ -92,7 +103,7 @@ worker) are requeued by the same reaper that guards the frontier. The worker *pr
 | Technique | Purpose |
 |-----------|---------|
 | User-agent & header rotation | Avoid trivial UA-based blocks |
-| Proxy pool rotation (datacenter → residential later) | Distribute IPs, bypass IP bans/geo |
+| Proxy pool rotation ✅ | Distribute IPs, bypass IP bans/geo (self-run proxies, pinned per host, health-tracked cooldown) |
 | Request pacing & jitter | Mimic human timing |
 | Browser fingerprint mitigation | Defeat JS-based bot detection |
 | Session/cookie reuse ✅ | Reduce re-auth and challenge frequency (per-host pinned identity + persisted jar) |
