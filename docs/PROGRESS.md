@@ -5,6 +5,10 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ## Backlog (deferred follow-ups)
 
+- [x] **Live end-to-end verification of Phase 4 discovery + text extraction** — done (2026-08-19,
+  see the live-verification entry below). The four features whose live checks were previously
+  deferred (sitemap / RSS-Atom / Common Crawl ingestion, plain-text extraction) are now verified
+  against a running crawler+Postgres+MinIO stack.
 - [x] **Plain-text (non-HTML) extraction** — done (2026-08-19). `text/*` bodies (plain, markdown,
   csv, logs) now index instead of being dropped; see entry below. PDF/doc binary parsing still open.
 
@@ -30,6 +34,35 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   loop — a long-lived Chromium claims jobs, renders JS-heavy pages, and POSTs the resolved DOM back
   for indexing. Verified live (rendered a real Wikipedia SPA → indexed). Lightweight anti-detection
   is in place; the full fingerprint/proxy stack remains a later Phase 3 refinement.
+
+---
+
+## 2026-08-19 — Phase 4: live end-to-end verification (discovery + text extraction)
+
+**What** — Brought the stack up (`postgres` + `redis` + `nats` + `minio` base infra, then a freshly
+`--build`-ed `crawler` in the `app` profile) and exercised, against real external sources, the four
+features that had only been unit-verified. Discharges their "deferred: live" notes.
+
+**Verification** (crawler `/healthz` ok, `/readyz` → postgres+minio ok):
+- **RSS/Atom feeds** — `POST /internal/feeds/ingest` on the BBC News RSS → `{discovered:10,
+  enqueued:10}`. Live RSS parse + frontier enqueue confirmed.
+- **Sitemaps** — `POST /internal/sitemap/ingest` on `cloudflare.com/sitemap.xml` and
+  `wordpress.org/sitemap.xml` → `{discovered:15, enqueued:15}` each (capped at `max_urls:15`).
+  A missing sitemap (`mozilla.org`, `python.org`) returned a clean `502` with the upstream `404`
+  surfaced — error path confirmed too.
+- **Common Crawl** — `POST /internal/commoncrawl/ingest {domain:"example.com", max_urls:5}` →
+  `{discovered:2, enqueued:2}`, hitting the **real** CC `collinfo.json` + CDX index end-to-end.
+- **Frontier populated** — campaign 9 (used for the ingests) held **128 `frontier_urls`** rows
+  (seed + sitemap 30 + feeds 10 + CC 2 + crawl-discovered links), 12 `FETCHED`, rest `SKIPPED`
+  under the campaign's `max_pages` — proving discovered URLs actually land in the frontier.
+- **Plain-text extraction** — seeded a campaign at `rfc-editor.org/rfc/rfc1.txt` (a `text/plain`
+  body). Within one crawl tick Postgres held the document: `content_type=text/plain;charset=utf-8`,
+  `http_status=200`, `title="Network Working Group … Steve Crocker"` (first line), `meta.text_len=
+  21079` — i.e. text that the old `IsHTML` gate would have dropped is now extracted and indexed.
+
+**Why** — CLAUDE.md rule 4 ("bring services up, hit endpoints, report actual output; no done without
+evidence"). Converts accumulated unit-only claims into live-proven behavior and catches any wiring
+bugs (none found — all endpoints, validation, and the shared enqueue/index paths worked as built).
 
 ---
 
@@ -64,9 +97,9 @@ restored after):
   32-byte hash, simhash, `en` language detect, no links, excerpt), empty body, **UTF-8-safe rune
   truncation** (300×`é` → 200 runes, no split), and `firstLine` skipping blanks. Existing crawler
   packages still build/test clean.
-- **Deferred:** live crawl of a `text/plain` URL against the running stack (Docker infra not up this
-  iteration); the extraction is unit-covered and the persist path is the shared, proven `index`
-  helper (same code the HTML path now uses).
+- **Verified live** (2026-08-19, see the live-verification entry above): crawling
+  `rfc-editor.org/rfc/rfc1.txt` indexed a `text/plain` document (`text_len=21079`) that the old gate
+  would have dropped.
 
 ---
 
@@ -135,8 +168,8 @@ restored after):
   the newest crawl; **builds the correct `url=domain%2F%2A&output=json&limit=` query**; multi-index
   cross-crawl dedupe + `MaxURLs` cap; explicit `IndexURL` skips collinfo; empty-domain error;
   collinfo-fetch-error fatal. Existing `api` tests still pass.
-- **Deferred:** live call against the real CC index + running crawler+Postgres; parse/discovery
-  logic fully unit-covered, enqueue path is the proven shared helper.
+- **Verified live** (2026-08-19): `POST /internal/commoncrawl/ingest {domain:"example.com"}` against
+  the real CC `collinfo.json`+CDX index → `{discovered:2, enqueued:2}`.
 
 ---
 
@@ -169,8 +202,8 @@ restored after):
   `feeds_test.go` (8): RSS 2.0 with cross-item dedupe, Atom preferring the alternate/HTML link over
   self, RSS 1.0/RDF top-level items, gzip round-trip, malformed-XML error, empty feed → no URLs,
   and `bestLink` fallback to a non-alternate href. Existing `api`/`sitemap` tests still pass.
-- **Deferred:** live endpoint call against a running crawler+Postgres; parse logic fully unit-covered
-  and the enqueue path is the proven shared helper.
+- **Verified live** (2026-08-19): `POST /internal/feeds/ingest` on the BBC News RSS →
+  `{discovered:10, enqueued:10}`.
 
 ---
 
@@ -210,8 +243,9 @@ keeps a minimal `go.mod` and no committed `go.sum`, restored after verifying):
   `Discover` flat, index-follows-children-with-cross-child-dedup, root-fetch-error-fatal,
   bad-child-skipped, `MaxURLs` cap, `MaxSitemaps` cap (fetch-count bounded). Existing `internal/api`
   tests still pass (unchanged `NewServer` signature).
-- **Deferred:** live endpoint call against a running crawler+Postgres (stack not up this iteration);
-  the discovery/parse logic is fully unit-covered and the enqueue path is the proven `seed()` path.
+- **Verified live** (2026-08-19): `POST /internal/sitemap/ingest` on `cloudflare.com` and
+  `wordpress.org` sitemaps → `{discovered:15, enqueued:15}` each; a missing sitemap returned a clean
+  502 with the upstream 404 surfaced.
 
 ---
 
