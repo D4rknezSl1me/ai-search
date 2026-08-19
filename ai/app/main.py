@@ -127,7 +127,8 @@ async def reindex() -> dict:
 @app.post("/v1/retrieve", response_model=RetrieveResponse)
 async def v1_retrieve(req: RetrieveRequest) -> RetrieveResponse:
     result = await retrieve(
-        req.query, _filters(req.filters), max_sources=req.max_sources, expand=req.expand
+        req.query, _filters(req.filters), max_sources=req.max_sources,
+        expand=req.expand, freshness=req.freshness,
     )
     items = [
         ResultItem(
@@ -157,6 +158,7 @@ async def v1_search(req: SearchRequest):
     result = await retrieve(
         req.query, _filters(req.filters),
         max_sources=req.options.max_sources, expand=req.options.expand,
+        freshness=req.options.freshness,
     )
     cands = result.candidates
 

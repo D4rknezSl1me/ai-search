@@ -16,6 +16,7 @@ from typing import Any
 
 from . import clients
 from .config import settings
+from .freshness import apply_freshness
 from .understand import QueryPlan, plan_query
 
 log = logging.getLogger("retrieval")
@@ -51,10 +52,17 @@ class Candidate:
     vector_rank: int | None = None
     fused_score: float = 0.0
     rerank_score: float | None = None
+    final_score: float | None = None   # relevance blended with recency (ordering only)
 
     @property
     def score(self) -> float:
+        """Relevance score (rerank if available, else fused) — for citations/UI."""
         return self.rerank_score if self.rerank_score is not None else self.fused_score
+
+    @property
+    def order_score(self) -> float:
+        """Ranking key: freshness-blended score when set, else plain relevance."""
+        return self.final_score if self.final_score is not None else self.score
 
 
 # ------------------------------------------------------------- filter builders ---
@@ -265,7 +273,7 @@ def _assemble(cands: list[Candidate], max_sources: int) -> list[Candidate]:
     but we never return fewer than the budget when relevant chunks remain — a
     sparse or single-domain corpus still fills up to max_sources.
     """
-    ordered = sorted(cands, key=lambda c: c.score, reverse=True)
+    ordered = sorted(cands, key=lambda c: c.order_score, reverse=True)
     seen_text: set[str] = set()
 
     def dedup_key(c: Candidate) -> str:
@@ -314,6 +322,7 @@ async def retrieve(
     max_sources: int | None = None,
     *,
     expand: bool | None = None,
+    freshness: str = "auto",
 ) -> RetrievalResult:
     max_sources = max_sources or settings.max_sources
     do_expand = settings.query_expansion if expand is None else expand
@@ -337,6 +346,15 @@ async def retrieve(
     await _fill_missing_text(shortlist)
     # 3. Rerank against the user's actual question, not an expansion.
     reranked = await _rerank(plan.original, shortlist)
+
+    # 4. Freshness: blend recency into the ordering (no-op for freshness="any").
+    apply_freshness(
+        shortlist, freshness,
+        half_life_days=settings.freshness_half_life_days,
+        undated_weight=settings.freshness_undated_weight,
+        auto_weight=settings.freshness_auto_weight,
+        fresh_weight=settings.freshness_fresh_weight,
+    )
 
     final = _assemble(shortlist, max_sources)
     return RetrievalResult(

@@ -33,6 +33,7 @@ class RetrieveRequest(BaseModel):
     filters: SearchFilters = Field(default_factory=SearchFilters)
     max_sources: int = 20
     expand: bool = True           # LLM query expansion/decomposition (recall)
+    freshness: str = "auto"       # auto | fresh | any — recency weighting
 
 
 class ResultItem(BaseModel):

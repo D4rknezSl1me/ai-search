@@ -29,6 +29,48 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: freshness-aware ranking (wire the inert `freshness` option)
+
+**What**
+- New `ai/app/freshness.py` — blends a recency signal into the retrieval ordering. The
+  `freshness=auto|fresh|any` request option had been accepted by the API since Phase 2 but was
+  **never used**; retrieval ignored it. Now it drives ranking:
+  - `recency_weight(published_at, now, half_life_days, undated_weight)` → a [0,1] score that is
+    1.0 for brand-new content and halves every `half_life_days`. Tolerant ISO parsing (trailing
+    `Z`, bare `YYYY-MM-DD`, naive→UTC). **Undated/unparseable docs return a neutral weight**
+    (default 0.5) — a missing date must never bury an otherwise-strong match (recall-first).
+  - `blend_weight(mode)` → `any`=0 (pure relevance), `auto`=0.15 (gentle nudge), `fresh`=0.45
+    (strong recency pull).
+  - `apply_freshness(cands, mode, …)` sets `Candidate.final_score = (1-w)·norm_relevance + w·recency`,
+    where relevance is min-max normalized within the shortlist (scale-independent — rerank logits
+    and RRF sums live on different scales). It only **reorders**, never drops candidates.
+- `retrieval.py`: `Candidate` gains `final_score` + an `order_score` property (freshness-blended
+  when set, else the plain relevance `score`); `_assemble` now sorts by `order_score`. `retrieve()`
+  gains a `freshness` param and applies the blend after rerank, before assembly. The relevance
+  `score` used for citations/confidence/UI is unchanged — freshness affects ordering only.
+- API: `RetrieveRequest.freshness` (parity with `SearchOptions.freshness`); both `/v1/retrieve` and
+  `/v1/search` pass it through. Config knobs (`freshness_half_life_days`, `freshness_undated_weight`,
+  `freshness_auto_weight`, `freshness_fresh_weight`) + `.env.example`.
+
+**Why**
+- Phase 4 "freshness-aware ranking" and the second half of "intent-based freshness boosting". For
+  time-sensitive questions, a newer document should outrank an equally-relevant stale one — but the
+  product bias is recall, so freshness is a *reordering nudge* that never removes results and never
+  penalizes undated content. Closes a live-but-inert API contract (the option was advertised).
+
+**Verification**
+- **Full offline suite: 38 tests pass** (`ai/tests/`, local `pytest`, no network). New
+  `test_freshness.py` (12): recency decay (fresh≈1, half-life→0.5, 2×→0.25, future clamped),
+  undated→neutral, `Z`/bare-date parsing; `blend_weight` mode mapping; and `apply_freshness` —
+  `any` is a no-op (`final_score` stays None), `fresh` promotes a fresher near-relevance doc while
+  `auto` keeps the stronger stale one, undated beats dated-old at equal relevance, single-candidate
+  and empty-list edge cases. Existing understand/fusion tests (26) still green.
+- Import/route smoke: `app.main` builds; `Candidate.order_score` falls back to `score` when no
+  freshness applied. **Deferred:** live end-to-end vs a running stack (GPU stack not up this
+  iteration; the change is pure ordering logic and unit-covered).
+
+---
+
 ## 2026-08-19 — Phase 4: query understanding (LLM expansion + decomposition)
 
 **What**

@@ -127,8 +127,13 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   retrieved (hybrid) and the runs are RRF-fused, so a chunk agreed on by several phrasings accrues
   score from each. Off-path and degrades to the original query when the LLM is down (recall-first,
   never fails a search). Wired through `/v1/retrieve` + `/v1/search` (`expand` flag, `expansions`
-  echoed). Remaining query-understanding work: intent classification + freshness-aware boosting.
-- Query-time dedupe/diversification tuning; freshness-aware ranking.
+  echoed). Remaining query-understanding work: intent classification.
+- [x] **Freshness-aware ranking** (`ai/app/freshness.py`): the `freshness=auto|fresh|any` request
+  option (previously accepted but inert) now blends a recency weight — halving every
+  `FRESHNESS_HALF_LIFE_DAYS` — into the ordering after rerank. `auto` nudges, `fresh` pulls hard,
+  `any` is pure relevance. Undated docs get a neutral weight (never buried for lacking a date) and
+  freshness only *reorders* the shortlist, never drops candidates (recall-first).
+- Query-time dedupe/diversification tuning.
 - Coverage/stats API; monitoring/alerts (saved queries).
 - Auth, API keys, rate limiting, usage metering (multi-tenant readiness).
 - Backups, runbooks, capacity planning; quantize vectors for density.

@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     expansion_temperature: float = 0.3
     expansion_timeout_s: float = 20.0
 
+    # --- Freshness-aware ranking (docs/07 §2–3; blends recency into ordering) ---
+    freshness_half_life_days: float = 180.0   # recency score halves every N days
+    freshness_undated_weight: float = 0.5     # neutral weight for docs with no date
+    freshness_auto_weight: float = 0.15       # recency blend for freshness="auto"
+    freshness_fresh_weight: float = 0.45      # recency blend for freshness="fresh"
+
     # --- Retrieval / fusion / rerank ---
     retrieve_k_lexical: int = 100
     retrieve_k_vector: int = 100
