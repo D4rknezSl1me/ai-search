@@ -133,7 +133,12 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   `FRESHNESS_HALF_LIFE_DAYS` — into the ordering after rerank. `auto` nudges, `fresh` pulls hard,
   `any` is pure relevance. Undated docs get a neutral weight (never buried for lacking a date) and
   freshness only *reorders* the shortlist, never drops candidates (recall-first).
-- Query-time dedupe/diversification tuning.
+- [x] **Query-time near-duplicate dedup** (`ai/app/dedup.py`): assembly previously deduped only on
+  an exact first-200-char match; it now collapses re-crawled/overlapping passages via word-shingle
+  Jaccard (`DedupIndex`, threshold `dedup_jaccard_threshold`), so each of the `max_sources` slots
+  carries distinct information. High threshold + short-snippet exact-only fallback keep it recall-safe
+  (distinct brief facts never dropped); assembly still backfills to budget. Diversification tuning
+  (per-domain cap) continues.
 - Coverage/stats API; monitoring/alerts (saved queries).
 - Auth, API keys, rate limiting, usage metering (multi-tenant readiness).
 - Backups, runbooks, capacity planning; quantize vectors for density.

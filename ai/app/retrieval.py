@@ -16,6 +16,7 @@ from typing import Any
 
 from . import clients
 from .config import settings
+from .dedup import DedupIndex
 from .freshness import apply_freshness
 from .understand import QueryPlan, plan_query
 
@@ -274,22 +275,21 @@ def _assemble(cands: list[Candidate], max_sources: int) -> list[Candidate]:
     sparse or single-domain corpus still fills up to max_sources.
     """
     ordered = sorted(cands, key=lambda c: c.order_score, reverse=True)
-    seen_text: set[str] = set()
-
-    def dedup_key(c: Candidate) -> str:
-        return (c.text or "")[:200]
+    # Near-duplicate index: collapses re-crawled/overlapping passages, not just
+    # exact-prefix matches (docs/07 §6). Only kept chunks enter the index, so a
+    # candidate skipped for the domain cap can still be reconsidered in pass 2.
+    seen = DedupIndex(k=settings.dedup_shingle_k, threshold=settings.dedup_jaccard_threshold)
 
     # Pass 1: diversified pick, honoring the per-domain cap.
     per_domain: dict[str, int] = {}
     out: list[Candidate] = []
     for c in ordered:
-        sig = dedup_key(c)
-        if sig in seen_text:
+        if seen.is_duplicate(c.text):
             continue
         dom = c.domain or ""
         if per_domain.get(dom, 0) >= settings.max_per_domain:
             continue
-        seen_text.add(sig)
+        seen.add(c.text)
         per_domain[dom] = per_domain.get(dom, 0) + 1
         out.append(c)
         if len(out) >= max_sources:
@@ -299,10 +299,9 @@ def _assemble(cands: list[Candidate], max_sources: int) -> list[Candidate]:
     for c in ordered:
         if len(out) >= max_sources:
             break
-        sig = dedup_key(c)
-        if sig in seen_text:
+        if seen.is_duplicate(c.text):
             continue
-        seen_text.add(sig)
+        seen.add(c.text)
         out.append(c)
     return out
 

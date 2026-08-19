@@ -29,6 +29,46 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: query-time near-duplicate dedup
+
+**What**
+- New `ai/app/dedup.py` — near-duplicate detection for result assembly. The old `_assemble` deduped
+  only on an exact `text[:200]` prefix match, which misses the two common real cases: the same
+  passage re-crawled with different whitespace/case, and chunks that overlap ~95%. Both waste scarce
+  `max_sources` slots on redundant content (fewer distinct facts reach synthesis, duplicate citations).
+  - `normalize` (lowercase + collapse whitespace), `shingles` (word k-grams; texts shorter than k
+    fall back to a single whole-string shingle → exact-match only), `jaccard`, and a `DedupIndex`
+    with **separate `is_duplicate` (query) and `add` (commit)** so a candidate can be tested,
+    skipped for another reason (the domain cap), and reconsidered later without polluting the index.
+- `retrieval._assemble` now uses `DedupIndex(k, threshold)` in place of the exact-prefix `seen_text`
+  set — both the diversified pass and the backfill pass. Behavior preserved: only kept chunks enter
+  the index; domain-capped candidates remain eligible for backfill; the budget still fills.
+- Config knobs `dedup_shingle_k` (5) + `dedup_jaccard_threshold` (0.8).
+
+**Why**
+- Phase 4 "query-time dedupe/diversification tuning." Recall-first means recall of *distinct*
+  information: collapsing near-identical passages frees slots for genuinely different sources, which
+  improves both the synthesis context and citation quality. Kept deliberately conservative (high
+  threshold, short-snippet exact-only fallback, never returns fewer results) so it can't drop a
+  distinct-but-brief fact.
+
+**Verification**
+- **Full offline suite: 51 tests pass** (`ai/tests/`, local `pytest`, no network). New
+  `test_dedup.py` (13): normalize case/whitespace, shingle k-grams + short-text fallback + empty,
+  Jaccard identical/disjoint/empty; `DedupIndex` — exact + case/whitespace variant flagged,
+  **one-word change in a realistic chunk-length passage** flagged, distinct text not flagged,
+  `is_duplicate` doesn't mutate, empty-text handling; and two `_assemble` integration tests
+  (near-dup skipped and a distinct doc backfilled to budget; distinct texts all kept). Prior
+  understand/fusion/freshness tests (38) still green.
+- **Test-fixture bug found:** the first draft used a ~35-word passage, where a single word edit
+  swings shingle Jaccard below 0.8 (false negative). Real chunks are ~250+ words, where a few-word
+  edit stays >0.9 — the regime the threshold targets — so the fixture was lengthened to ~130 words
+  to model reality. No code change needed; the threshold behaves correctly at realistic lengths.
+- Import smoke: `app.main` builds. Live end-to-end vs a running stack deferred (pure assembly logic,
+  unit-covered).
+
+---
+
 ## 2026-08-19 — Phase 4: freshness-aware ranking (wire the inert `freshness` option)
 
 **What**

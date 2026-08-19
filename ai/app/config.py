@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     rerank_candidates: int = 50      # shortlist size fed to the cross-encoder
     max_sources: int = 12            # chunks kept for synthesis
     max_per_domain: int = 3          # diversity cap during assembly
+    dedup_shingle_k: int = 5         # word k-shingle size for near-dup detection
+    dedup_jaccard_threshold: float = 0.8  # ≥ this similarity → treated as duplicate
 
     @property
     def qdrant_url(self) -> str:

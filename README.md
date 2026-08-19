@@ -115,7 +115,8 @@ docker run --rm --network ai-search_default -v "$PWD/ai/eval:/eval" -w /eval \
   pacing + per-host session/cookie persistence + per-host pinned self-run proxy pool)
 - [ ] **Phase 4 — Scale & quality** (in progress) — LLM query understanding (expansion +
   decomposition into paraphrases/sub-questions, RRF-fused, degrades to the original query);
-  freshness-aware ranking (`freshness=auto|fresh|any` blends recency into ordering)
+  freshness-aware ranking (`freshness=auto|fresh|any` blends recency into ordering);
+  query-time near-duplicate dedup (shingle-Jaccard, frees source slots for distinct info)
 - [ ] Phase 5 — Web UI
 
 See [docs/12-ROADMAP.md](docs/12-ROADMAP.md) for details.
