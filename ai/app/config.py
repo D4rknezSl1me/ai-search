@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     embed_batch: int = 32            # chunks per TEI call
     indexer_poll_seconds: float = 5.0
 
+    # --- Query understanding (docs/07 §2; LLM expansion/decomposition) ---
+    query_expansion: bool = True     # generate paraphrases + sub-queries (recall)
+    max_query_expansions: int = 3    # extra queries beyond the original
+    expansion_temperature: float = 0.3
+    expansion_timeout_s: float = 20.0
+
     # --- Retrieval / fusion / rerank ---
     retrieve_k_lexical: int = 100
     retrieve_k_vector: int = 100

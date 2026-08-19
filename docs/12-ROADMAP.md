@@ -48,7 +48,8 @@ persisted; crawl dashboard live; target throughput demonstrated on a sample.
 - [x] `/v1/search`, `/v1/retrieve`, `/v1/coverage`; response contract ([13](13-API.md)).
 - [x] Eval harness (recall@k, MRR, nDCG; citation accuracy, LLM-as-judge groundedness).
 - [x] Degradation paths (Qdrant → lexical-only, reranker → fused, LLM → retrieve-only).
-- [~] Deferred/partial: richer query understanding (LLM expansion/decomposition) is minimal;
+- [~] Deferred/partial: richer query understanding — **LLM expansion/decomposition now done**
+  in Phase 4 (`ai/app/understand.py`; intent classification + freshness boosting still pending);
   embeddings + reranker run on **CPU** pending stable Blackwell/sm_120 TEI GPU kernels
   (image is one env swap away); multilingual `bge-reranker-v2-m3` swapped for MiniLM until then.
 
@@ -115,12 +116,18 @@ coherent per-render identity + client hints + stealth patches + human-like pacin
 identity and persisted cookie jar + **per-host pinned self-run proxy pool with health-tracked
 cooldown**, all verified in a real browser. **Phase 3 done.**
 
-## Phase 4 — Scale & quality
+## Phase 4 — Scale & quality  🔨 in progress
 
 **Goal:** harden, deepen, and refine over collected data.
 
 - Recrawl/freshness scheduling; incremental/conditional GET; change detection.
 - Enrichment: NER, keyphrases, topic tags; media OCR/ASR (optional).
+- [x] **Query understanding — LLM expansion/decomposition** (`ai/app/understand.py`): the local
+  LLM rewrites each query into paraphrases + decomposed sub-questions; every planned query is
+  retrieved (hybrid) and the runs are RRF-fused, so a chunk agreed on by several phrasings accrues
+  score from each. Off-path and degrades to the original query when the LLM is down (recall-first,
+  never fails a search). Wired through `/v1/retrieve` + `/v1/search` (`expand` flag, `expansions`
+  echoed). Remaining query-understanding work: intent classification + freshness-aware boosting.
 - Query-time dedupe/diversification tuning; freshness-aware ranking.
 - Coverage/stats API; monitoring/alerts (saved queries).
 - Auth, API keys, rate limiting, usage metering (multi-tenant readiness).

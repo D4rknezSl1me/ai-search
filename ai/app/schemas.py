@@ -19,6 +19,7 @@ class SearchOptions(BaseModel):
     max_sources: int = 12
     freshness: str = "auto"       # auto | fresh | any
     synthesize: bool = True       # false → retrieve-only
+    expand: bool = True           # LLM query expansion/decomposition (recall)
 
 
 class SearchRequest(BaseModel):
@@ -31,6 +32,7 @@ class RetrieveRequest(BaseModel):
     query: str
     filters: SearchFilters = Field(default_factory=SearchFilters)
     max_sources: int = 20
+    expand: bool = True           # LLM query expansion/decomposition (recall)
 
 
 class ResultItem(BaseModel):
@@ -53,3 +55,4 @@ class RetrieveResponse(BaseModel):
     coverage: dict
     reranked: bool
     degraded: dict
+    expansions: list[str] = Field(default_factory=list)

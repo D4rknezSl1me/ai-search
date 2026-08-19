@@ -113,7 +113,8 @@ docker run --rm --network ai-search_default -v "$PWD/ai/eval:/eval" -w /eval \
   3 credential-free adapters — Mastodon, Hacker News, Lemmy — with health monitoring; freshness
   cadence for tracked entities; full anti-detection stack: coherent fingerprints + human-like
   pacing + per-host session/cookie persistence + per-host pinned self-run proxy pool)
-- [ ] Phase 4 — Scale & quality
+- [ ] **Phase 4 — Scale & quality** (in progress) — LLM query understanding done: expansion +
+  decomposition into paraphrases/sub-questions, RRF-fused, degrades to the original query
 - [ ] Phase 5 — Web UI
 
 See [docs/12-ROADMAP.md](docs/12-ROADMAP.md) for details.

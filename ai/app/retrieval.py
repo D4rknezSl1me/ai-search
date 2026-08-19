@@ -9,14 +9,21 @@ than an error.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from . import clients
 from .config import settings
+from .understand import QueryPlan, plan_query
 
 log = logging.getLogger("retrieval")
+
+
+async def _expansion_llm(messages: list[dict[str, str]], temperature: float) -> str:
+    """Adapter handed to the query planner so `understand` stays client-free."""
+    return await clients.llm_complete(messages, options={"temperature": temperature})
 
 
 @dataclass
@@ -152,7 +159,15 @@ async def vector_search(query: str, f: Filters, k: int) -> list[dict]:
 
 # --------------------------------------------------------------------- fusion ---
 
-def _rrf(lex: list[dict], vec: list[dict]) -> dict[str, Candidate]:
+def _rrf_runs(runs: list[tuple[list[dict], list[dict]]]) -> dict[str, Candidate]:
+    """Reciprocal-rank fusion across one or more (lexical, vector) retrieval runs.
+
+    Each expanded query contributes its own ranked lexical + vector lists; a
+    chunk's fused score is the sum of 1/(k+rank+1) over every list it appears in.
+    A chunk surfaced by several phrasings therefore accrues score from each,
+    which is exactly the robustness we want — agreement across paraphrases and
+    sub-questions is a strong relevance signal (recall-first, CLAUDE.md).
+    """
     k = settings.rrf_k
     cands: dict[str, Candidate] = {}
 
@@ -173,23 +188,40 @@ def _rrf(lex: list[dict], vec: list[dict]) -> dict[str, Candidate]:
             cands[chunk_id] = c
         return c
 
-    for rank, hit in enumerate(lex):
-        src = hit.get("_source", {})
-        cid = src.get("chunk_id") or hit.get("_id")
-        c = ensure(cid, src)
-        c.lexical_rank = rank
-        c.fused_score += 1.0 / (k + rank + 1)
+    def best_rank(current: int | None, rank: int) -> int:
+        # Record the strongest (lowest) rank this chunk reached across all runs.
+        return rank if current is None else min(current, rank)
 
-    for rank, hit in enumerate(vec):
-        payload = hit.get("payload", {})
-        cid = payload.get("chunk_id")
-        if not cid:
-            continue
-        c = ensure(cid, payload)
-        c.vector_rank = rank
-        c.fused_score += 1.0 / (k + rank + 1)
+    for lex, vec in runs:
+        for rank, hit in enumerate(lex):
+            src = hit.get("_source", {})
+            cid = src.get("chunk_id") or hit.get("_id")
+            if not cid:
+                continue
+            c = ensure(cid, src)
+            c.lexical_rank = best_rank(c.lexical_rank, rank)
+            c.fused_score += 1.0 / (k + rank + 1)
+
+        for rank, hit in enumerate(vec):
+            payload = hit.get("payload", {})
+            cid = payload.get("chunk_id")
+            if not cid:
+                continue
+            c = ensure(cid, payload)
+            c.vector_rank = best_rank(c.vector_rank, rank)
+            c.fused_score += 1.0 / (k + rank + 1)
 
     return cands
+
+
+async def _gather_runs(queries: list[str], f: Filters) -> list[tuple[list[dict], list[dict]]]:
+    """Run lexical + vector retrieval for every planned query, concurrently."""
+    tasks: list[Any] = []
+    for q in queries:
+        tasks.append(lexical_search(q, f, settings.retrieve_k_lexical))
+        tasks.append(vector_search(q, f, settings.retrieve_k_vector))
+    results = await asyncio.gather(*tasks)
+    return [(results[i], results[i + 1]) for i in range(0, len(results), 2)]
 
 
 async def _fill_missing_text(cands: list[Candidate]) -> None:
@@ -273,25 +305,44 @@ class RetrievalResult:
     n_candidates: int
     reranked: bool
     vector_ok: bool
+    plan: QueryPlan
 
 
-async def retrieve(query: str, f: Filters, max_sources: int | None = None) -> RetrievalResult:
+async def retrieve(
+    query: str,
+    f: Filters,
+    max_sources: int | None = None,
+    *,
+    expand: bool | None = None,
+) -> RetrievalResult:
     max_sources = max_sources or settings.max_sources
-    lex = await lexical_search(query, f, settings.retrieve_k_lexical)
-    vec = await vector_search(query, f, settings.retrieve_k_vector)
+    do_expand = settings.query_expansion if expand is None else expand
 
-    fused = _rrf(lex, vec)
+    # 1. Understand: normalize + (optionally) expand into paraphrases/sub-queries.
+    plan = await plan_query(
+        query,
+        expand=do_expand,
+        max_expansions=settings.max_query_expansions,
+        llm=_expansion_llm if do_expand else None,
+        temperature=settings.expansion_temperature,
+    )
+
+    # 2. Retrieve every planned query (hybrid) and fuse the runs together.
+    runs = await _gather_runs(plan.queries, f)
+    fused = _rrf_runs(runs)
     n_candidates = len(fused)
     shortlist = sorted(fused.values(), key=lambda c: c.fused_score, reverse=True)
     shortlist = shortlist[: settings.rerank_candidates]
 
     await _fill_missing_text(shortlist)
-    reranked = await _rerank(query, shortlist)
+    # 3. Rerank against the user's actual question, not an expansion.
+    reranked = await _rerank(plan.original, shortlist)
 
     final = _assemble(shortlist, max_sources)
     return RetrievalResult(
         candidates=final,
         n_candidates=n_candidates,
         reranked=reranked,
-        vector_ok=bool(vec),
+        vector_ok=any(vec for _, vec in runs),
+        plan=plan,
     )

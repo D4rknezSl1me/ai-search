@@ -126,7 +126,9 @@ async def reindex() -> dict:
 
 @app.post("/v1/retrieve", response_model=RetrieveResponse)
 async def v1_retrieve(req: RetrieveRequest) -> RetrieveResponse:
-    result = await retrieve(req.query, _filters(req.filters), max_sources=req.max_sources)
+    result = await retrieve(
+        req.query, _filters(req.filters), max_sources=req.max_sources, expand=req.expand
+    )
     items = [
         ResultItem(
             chunk_id=c.chunk_id, document_id=c.document_id, url=c.url, domain=c.domain,
@@ -143,6 +145,7 @@ async def v1_retrieve(req: RetrieveRequest) -> RetrieveResponse:
         coverage={"candidates": result.n_candidates, "used": len(items), "domains": len(domains)},
         reranked=result.reranked,
         degraded={"vector": not result.vector_ok},
+        expansions=result.plan.expansions,
     )
 
 
@@ -151,7 +154,10 @@ async def v1_retrieve(req: RetrieveRequest) -> RetrieveResponse:
 @app.post("/v1/search")
 async def v1_search(req: SearchRequest):
     start = time.monotonic()
-    result = await retrieve(req.query, _filters(req.filters), max_sources=req.options.max_sources)
+    result = await retrieve(
+        req.query, _filters(req.filters),
+        max_sources=req.options.max_sources, expand=req.options.expand,
+    )
     cands = result.candidates
 
     llm_ready = req.options.synthesize and await clients.llm_available()
@@ -188,6 +194,7 @@ def _retrieve_only_payload(req, result, start, llm_ready) -> dict:
         ],
         "confidence": 0.0,
         "coverage": {"candidates": result.n_candidates, "used": len(cands), "domains": _domains(cands)},
+        "expansions": result.plan.expansions,
         "latency_ms": int((time.monotonic() - start) * 1000),
         "degraded": {"vector": not result.vector_ok, "reranker": not result.reranked, "llm": not llm_ready},
     }
@@ -208,6 +215,7 @@ async def _search_full(req, result, start) -> dict:
         "citations": [_citation_dict(c) for c in citations],
         "confidence": synthesis.confidence(cands, used, result.reranked),
         "coverage": {"candidates": result.n_candidates, "used": len(cands), "domains": _domains(cands)},
+        "expansions": result.plan.expansions,
         "latency_ms": int((time.monotonic() - start) * 1000),
         "degraded": {"vector": not result.vector_ok, "reranker": not result.reranked, "llm": False},
     }
@@ -246,6 +254,7 @@ async def _search_sse(req, result, start):
         "mode": "synthesize",
         "confidence": synthesis.confidence(cands, used, result.reranked),
         "coverage": {"candidates": result.n_candidates, "used": len(cands), "domains": _domains(cands)},
+        "expansions": result.plan.expansions,
         "latency_ms": int((time.monotonic() - start) * 1000),
         "degraded": {"vector": not result.vector_ok, "reranker": not result.reranked, "llm": False},
     })

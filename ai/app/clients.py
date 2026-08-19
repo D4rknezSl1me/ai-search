@@ -132,6 +132,22 @@ async def llm_available() -> bool:
         return False
 
 
+async def llm_complete(messages: list[dict[str, str]], *, options: dict[str, Any] | None = None) -> str:
+    """One-shot (non-streaming) chat completion from Ollama's /api/chat.
+
+    Used off the answer hot-path (e.g. query expansion), where we want the whole
+    reply at once rather than a token stream. Returns the assistant text."""
+    payload: dict[str, Any] = {"model": settings.llm_model, "messages": messages, "stream": False}
+    if options:
+        payload["options"] = options
+    resp = await http().post(
+        f"{settings.llm_url}/api/chat", json=payload,
+        timeout=httpx.Timeout(settings.expansion_timeout_s, connect=5.0),
+    )
+    resp.raise_for_status()
+    return resp.json().get("message", {}).get("content", "")
+
+
 async def llm_chat_stream(messages: list[dict[str, str]], *, options: dict[str, Any] | None = None):
     """Stream assistant tokens from Ollama's /api/chat (newline-delimited JSON)."""
     payload: dict[str, Any] = {"model": settings.llm_model, "messages": messages, "stream": True}

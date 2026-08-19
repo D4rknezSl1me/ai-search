@@ -13,8 +13,8 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   on sm_120 here (loads on CUDA, then stalls); running on **CPU** for now. The GPU image is
   built (`deploy/tei-blackwell`) and one `TEI_IMAGE` swap away once TEI ships stable Blackwell
   kernels. Also restore `bge-reranker-v2-m3` (multilingual) over MiniLM at that point.
-- [ ] **Richer query understanding** — LLM-driven expansion/decomposition and intent-based
-  freshness boosting (current pipeline normalizes + filters only).
+- [~] **Richer query understanding** — LLM-driven **expansion/decomposition done** (2026-08-19,
+  `ai/app/understand.py`; see entry below). Intent-based freshness boosting still open.
 - [ ] **Index reconciliation** — reconcile `documents.n_chunks` vs actual Qdrant/OpenSearch
   counts; prune stale chunks when a doc is re-chunked to fewer pieces.
 - [ ] **max_pages best-effort overshoot** — tighten the concurrent cap if it matters.
@@ -26,6 +26,55 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   loop — a long-lived Chromium claims jobs, renders JS-heavy pages, and POSTs the resolved DOM back
   for indexing. Verified live (rendered a real Wikipedia SPA → indexed). Lightweight anti-detection
   is in place; the full fingerprint/proxy stack remains a later Phase 3 refinement.
+
+---
+
+## 2026-08-19 — Phase 4: query understanding (LLM expansion + decomposition)
+
+**What**
+- New `ai/app/understand.py` — the query-understanding step (docs/07 §2) the pipeline was missing;
+  previously retrieval ran the raw query only. Turns one question into a `QueryPlan`: the normalized
+  original plus LLM-generated **paraphrases** and **decomposed sub-questions**. Pure and
+  dependency-injected — the LLM is passed in as an async callable, so parsing/cleaning/planning are
+  unit-testable offline with no model or network:
+  - `normalize_query` (trim + collapse whitespace; conservative — never rewrites the user's terms).
+  - `parse_expansions` (tolerant: prefers the JSON array the prompt asks for — even wrapped in
+    prose or as objects — and falls back to line-splitting; strips numbering/bullets/quotes).
+  - `clean_expansions` (case-insensitive dedupe, drops the original, drops empty/over-long, caps count).
+  - `plan_query` (async): builds the plan, and returns **original-only** whenever expansion is off,
+    no LLM is wired, the query is empty, or the model call throws — a search never fails on it.
+- `clients.llm_complete` — one-shot (non-streaming) Ollama `/api/chat` used off the answer hot path.
+- `retrieval.py` — generalized fusion: `_rrf` → **`_rrf_runs`**, which RRF-fuses one-or-many
+  `(lexical, vector)` runs; a chunk surfaced by several phrasings sums score from each (agreement
+  across paraphrases/sub-questions is a strong relevance signal). `_gather_runs` fires every planned
+  query's hybrid retrieval concurrently (`asyncio.gather`). `retrieve()` now plans → gathers → fuses,
+  **reranks against the user's original question** (not an expansion), and carries the `QueryPlan`
+  on `RetrievalResult`. New `expand` param (defaults to `settings.query_expansion`).
+- API: `SearchOptions.expand` / `RetrieveRequest.expand` (default on) toggle it per request;
+  `/v1/retrieve` returns `expansions`, `/v1/search` echoes them in the payload/SSE `meta`.
+- Config knobs (`query_expansion`, `max_query_expansions`, `expansion_temperature`,
+  `expansion_timeout_s`) + `.env.example`. New `ai/pytest.ini` (`pythonpath=.`, `testpaths=tests`).
+
+**Why**
+- The north star is **maximum recall** (CLAUDE.md), and decomposition is precisely what makes
+  "find everything about X" actually find everything — one literal query misses documents that a
+  paraphrase or sub-question would surface. This was the top open backlog item and the first
+  query-understanding piece of Phase 4. Kept strictly off-path/degradable so it only ever *adds*
+  recall, never blocks a search.
+
+**Verification**
+- **26 offline unit tests pass** (`ai/tests/`, no network/LLM) via local `pytest`:
+  `test_understand.py` (17) — normalize; JSON-array / prose-wrapped / object / line-fallback /
+  numbered+bulleted+quoted parsing; dedupe-vs-original, count cap, empty/over-long drop;
+  `QueryPlan.queries`/`expanded`; and `plan_query` across expand-on, model-echoes-original,
+  **LLM-error fallback**, expand-disabled, no-LLM, and empty-query. `test_fusion.py` (9) — single-run
+  rank/score bookkeeping, **multi-run boost of a chunk shared across queries**, best-rank kept across
+  runs, vector-only payload, missing-chunk_id skip, empty runs. Found & fixed one bug during testing:
+  `_strip_line` stripped wrapping quotes before removing numbering, leaving `1. "foo"` quoted.
+- Import/route smoke: `app.main` builds; `/v1/retrieve` + `/v1/search` present and unchanged in shape.
+- **Deferred:** live end-to-end against a running GPU stack (Ollama/TEI/Qdrant/OpenSearch) — not
+  brought up this iteration; the feature degrades to original-only when the LLM is unavailable, and
+  the offline suite covers the planning/fusion/fallback logic.
 
 ---
 

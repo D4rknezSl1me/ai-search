@@ -1,0 +1,3 @@
+# Test-only deps (not installed in the runtime image). Run: pytest
+-r requirements.txt
+pytest==8.4.1
