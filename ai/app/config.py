@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     expansion_temperature: float = 0.3
     expansion_timeout_s: float = 20.0
 
+    # --- Retrieval result cache (docs/07 caching; short TTL, recall-safe) ---
+    retrieval_cache_enabled: bool = True
+    retrieval_cache_ttl_s: float = 60.0   # short: freshly-crawled docs appear quickly
+    retrieval_cache_size: int = 512
+
     # --- Freshness-aware ranking (docs/07 §2–3; blends recency into ordering) ---
     freshness_half_life_days: float = 180.0   # recency score halves every N days
     freshness_undated_weight: float = 0.5     # neutral weight for docs with no date

@@ -30,6 +30,37 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: retrieval result cache (recall-safe, short TTL)
+
+**What**
+- New `ai/app/cache.py` — a small in-process `TTLCache` (fixed-size, LRU eviction, per-entry TTL,
+  injectable clock). Lazy expiry on `get`, expired-purge + LRU trim on `set`, `ttl<=0` disables it.
+- Wired into `retrieval.retrieve()`: a module-level `_result_cache` memoizes the `RetrievalResult`
+  for identical queries. Key (`_cache_key`) is a normalized, order-insensitive digest of everything
+  that changes the result — casefolded query, sorted filter lists, `max_sources`, `expand`, and the
+  **effective** freshness. The cache is **bypassed whenever ranking is freshness-driven**
+  (`effective_freshness == "fresh"`, which covers both an explicit `freshness=fresh` and a
+  news/recency intent), so time-sensitive queries always recompute against the newest content.
+- Config knobs `retrieval_cache_enabled` / `retrieval_cache_ttl_s` (60s) / `retrieval_cache_size`
+  (512) + `.env.example`.
+
+**Why**
+- docs/07 lists a short-TTL query→results cache "respecting freshness intent." On the owner's single
+  RTX 5070, every hit avoids a burst of embed + ANN + lexical + cross-encoder work (and downstream
+  LLM for search), which matters for throughput on one box and for repeated/dashboard/eval queries.
+  Kept strictly recall-safe: short default TTL and an automatic bypass for freshness-driven ranking
+  mean freshly-crawled documents are never hidden behind a stale hit (north star intact).
+
+**Verification**
+- **Full offline suite: 83 tests pass** (`ai/tests/`, local `pytest`, no network). New
+  `test_cache.py` (8): miss→hit, TTL expiry at the boundary (with drop), LRU eviction honoring
+  recency touches, re-set refreshing the TTL window, `ttl=0` disabling storage, expired-purge on
+  `set`; and `_cache_key` — stable across case/whitespace + filter-order differences, and distinct
+  when any of query/max_sources/expand/freshness/filters changes. Prior tests (75) green.
+- Import smoke: `app.main` builds; `_result_cache` initialized from settings (ttl 60, size 512).
+
+---
+
 ## 2026-08-19 — Phase 4: Common Crawl URL-index seed discovery (massive cold-start breadth)
 
 **What**

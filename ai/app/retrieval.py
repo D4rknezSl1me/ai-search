@@ -10,11 +10,13 @@ than an error.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from . import clients
+from .cache import TTLCache
 from .config import settings
 from .dedup import DedupIndex
 from .freshness import apply_freshness
@@ -22,6 +24,29 @@ from .intent import classify, resolve_freshness
 from .understand import QueryPlan, plan_query
 
 log = logging.getLogger("retrieval")
+
+# Short-lived memoization of retrieval results for identical queries (recall-safe;
+# bypassed whenever ranking is freshness-driven — see retrieve()).
+_result_cache = TTLCache(settings.retrieval_cache_size, settings.retrieval_cache_ttl_s)
+
+
+def _cache_key(query: str, f: Filters, max_sources: int, expand: bool, freshness: str) -> str:
+    """A stable key over everything that changes the result set/order."""
+    return json.dumps(
+        {
+            "q": (query or "").strip().casefold(),
+            "f": [
+                f.date_from, f.date_to,
+                sorted(f.source_types), sorted(f.languages),
+                sorted(f.domains_include), sorted(f.domains_exclude),
+            ],
+            "n": max_sources,
+            "x": expand,
+            "fr": freshness,
+        },
+        sort_keys=True,
+        default=str,
+    )
 
 
 async def _expansion_llm(messages: list[dict[str, str]], temperature: float) -> str:
@@ -334,6 +359,15 @@ async def retrieve(
     intent = classify(query)
     effective_freshness = resolve_freshness(freshness, intent)
 
+    # Cache: memoize identical queries briefly, but never when ranking is
+    # freshness-driven (fresh/news) — those must always see the newest content.
+    cacheable = settings.retrieval_cache_enabled and effective_freshness != "fresh"
+    key = _cache_key(query, f, max_sources, do_expand, effective_freshness) if cacheable else ""
+    if cacheable:
+        cached = _result_cache.get(key)
+        if cached is not None:
+            return cached
+
     # 1. Understand: normalize + (optionally) expand into paraphrases/sub-queries.
     plan = await plan_query(
         query,
@@ -364,7 +398,7 @@ async def retrieve(
     )
 
     final = _assemble(shortlist, max_sources)
-    return RetrievalResult(
+    result = RetrievalResult(
         candidates=final,
         n_candidates=n_candidates,
         reranked=reranked,
@@ -373,3 +407,6 @@ async def retrieve(
         intent=intent.value,
         freshness=effective_freshness,
     )
+    if cacheable:
+        _result_cache.set(key, result)
+    return result
