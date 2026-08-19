@@ -5,6 +5,8 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ## Backlog (deferred follow-ups)
 
+- [x] **Live verification of the full product loop (synthesis)** — done (2026-08-20, see entry
+  below). `/v1/search` produces a grounded, inline-cited answer from the local `llama3.1:8b`.
 - [x] **Live verification of Phase 4 intelligence-plane retrieval** — done (2026-08-20, see entry
   below). The query-understanding / freshness / dedup / intent / cache rewrite of `retrieve()` is
   verified against a live OpenSearch (GPU-free; vector/rerank/LLM degrade gracefully).
@@ -38,6 +40,29 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   loop — a long-lived Chromium claims jobs, renders JS-heavy pages, and POSTs the resolved DOM back
   for indexing. Verified live (rendered a real Wikipedia SPA → indexed). Lightweight anti-detection
   is in place; the full fingerprint/proxy stack remains a later Phase 3 refinement.
+
+---
+
+## 2026-08-20 — Milestone: full product loop verified live (grounded cited synthesis)
+
+**What** — Brought up the local synthesis LLM (`llm`/Ollama; the `llama3.1:8b` model, 4.58 GB, was
+already cached in the `ollamadata` volume — the GPU device reservation started fine on Docker
+Desktop) and exercised `/v1/search` with synthesis on. This is the first live proof this session of
+the **entire core pipeline**: crawl → index → hybrid retrieve → **local-LLM synthesis → cited answer**.
+
+**Verification** (ai-api + OpenSearch + Ollama up; TEI/reranker intentionally down):
+- `POST /v1/search {"query":"Who was Ada Lovelace and what did she work on?", options:{synthesize:true,
+  stream:false}}` → `mode:"synthesize"`, answer: *"According to source [2], Ada Lovelace was the first
+  computer programmer and wrote the first algorithm for the analytical engine."*
+- The answer is **faithful to the source** (no hallucination), carries an **inline [2] citation**,
+  and `citations` resolved `[2] → http://ex/ada` ("Ada Lovelace") — the source-number↔document
+  mapping and citation verification both work. `confidence:0.574`; `degraded:{vector:true,
+  reranker:true, llm:false}` — synthesis succeeded even with the vector index + reranker absent
+  (recall-first degradation end to end).
+- No paid API (CLAUDE.md rule 2) — synthesis ran entirely on the local Ollama model.
+- No code changes; the Phase 2 synthesis path works intact on top of all the Phase 4 retrieval
+  changes. (Full GPU embeddings via TEI remain the one piece not exercised — its sm_120 warmup
+  caveat stands; retrieval degrades to lexical without it, as shown.)
 
 ---
 
