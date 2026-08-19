@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ai-search — find everything</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='14' font-size='14'%3E%F0%9F%94%8D%3C/text%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #131824; --panel2: #1a2130; --line: #232c3d;
+    --text: #e6ebf5; --muted: #8a95a8; --accent: #5eead4; --accent2: #7c9cff;
+    --warn: #f0b45e; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: radial-gradient(1200px 600px at 50% -10%, #16203a 0%, var(--bg) 55%);
+    color: var(--text); font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 48px 20px 80px; }
+  header { text-align: center; margin-bottom: 28px; }
+  .logo { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+  .logo span { color: var(--accent); }
+  .tag { color: var(--muted); margin-top: 4px; font-size: 14px; }
+  form { display: flex; gap: 10px; margin: 22px 0 8px; }
+  input[type=text] {
+    flex: 1; background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    padding: 15px 18px; border-radius: var(--radius); font-size: 16px; outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input[type=text]:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px #7c9cff22; }
+  button {
+    background: linear-gradient(180deg, var(--accent2), #5b7cf0); color: #0b0e14; border: 0;
+    padding: 0 22px; border-radius: var(--radius); font-weight: 650; font-size: 15px; cursor: pointer;
+  }
+  button:disabled { opacity: .55; cursor: default; }
+  .opts { display: flex; gap: 16px; color: var(--muted); font-size: 13px; align-items: center; flex-wrap: wrap; }
+  .opts label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  .hidden { display: none !important; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; margin-top: 22px; }
+  .answer { font-size: 16.5px; white-space: pre-wrap; }
+  .answer .cite {
+    color: var(--accent); cursor: pointer; font-weight: 650; font-size: 12px; vertical-align: super;
+    text-decoration: none; padding: 0 1px;
+  }
+  .answer .cite:hover { text-decoration: underline; }
+  .meta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .badge { font-size: 12px; color: var(--muted); background: var(--panel2); border: 1px solid var(--line); padding: 3px 10px; border-radius: 999px; }
+  .badge.warn { color: var(--warn); border-color: #4a3c1e; }
+  .badge b { color: var(--text); font-weight: 600; }
+  h2.sec { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 30px 0 6px; }
+  .src { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 10px; scroll-margin-top: 16px; }
+  .src.flash { border-color: var(--accent); box-shadow: 0 0 0 3px #5eead422; }
+  .src .n { display: inline-block; min-width: 22px; height: 22px; line-height: 22px; text-align: center; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; color: var(--accent); margin-right: 8px; }
+  .src a.title { color: var(--text); font-weight: 600; text-decoration: none; }
+  .src a.title:hover { color: var(--accent2); }
+  .src .url { color: var(--muted); font-size: 12px; margin: 2px 0 8px; word-break: break-all; }
+  .src .snip { color: #c4ccdb; font-size: 13.5px; }
+  .status { color: var(--muted); font-size: 14px; margin-top: 22px; min-height: 20px; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 8px; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 50px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">ai<span>·</span>search</div>
+    <div class="tag">Find every piece of information — cited, from your own crawled corpus.</div>
+  </header>
+
+  <form id="f">
+    <input id="q" type="text" placeholder="Ask anything…" autocomplete="off" autofocus />
+    <button id="go" type="submit">Search</button>
+  </form>
+  <div class="opts">
+    <label><input type="checkbox" id="synth" checked /> Synthesize answer</label>
+    <label>Freshness
+      <select id="fresh" style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:3px 6px;">
+        <option value="auto">auto</option><option value="fresh">fresh</option><option value="any">any</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="status" class="status"></div>
+  <div id="answerCard" class="card hidden">
+    <div id="answer" class="answer"></div>
+    <div id="meta" class="meta"></div>
+  </div>
+  <div id="sources"></div>
+
+  <footer>Fully self-hosted · local LLM · no paid APIs</footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const form = $('#f'), input = $('#q'), go = $('#go');
+const statusEl = $('#status'), answerCard = $('#answerCard'), answerEl = $('#answer'),
+      metaEl = $('#meta'), sourcesEl = $('#sources');
+
+function esc(s){ return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+// Render answer text, turning [n] into clickable citation chips.
+function renderAnswer(text){
+  answerEl.innerHTML = esc(text).replace(/\[(\d+)\]/g,
+    (m,n) => `<a class="cite" href="#src-${n}" onclick="flashSrc(${n})">[${n}]</a>`);
+}
+function flashSrc(n){
+  const el = document.getElementById('src-'+n);
+  if(el){ el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'), 1200); }
+}
+
+function addSource(s){
+  const div = document.createElement('div');
+  div.className = 'src'; div.id = 'src-' + s.n;
+  const score = (s.score!=null) ? `<span class="badge">score ${s.score}</span>` : '';
+  div.innerHTML = `<span class="n">${s.n}</span>`
+    + `<a class="title" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title||s.url)}</a>`
+    + `<div class="url">${esc(s.domain||'')} — ${esc(s.url)}</div>`
+    + `<div class="snip">${esc(s.snippet||'')}</div>`;
+  sourcesEl.appendChild(div);
+}
+
+function renderMeta(m){
+  const bits = [];
+  if(m.mode) bits.push(`<span class="badge"><b>${m.mode}</b> mode</span>`);
+  if(m.confidence!=null) bits.push(`<span class="badge">confidence <b>${m.confidence}</b></span>`);
+  if(m.coverage) bits.push(`<span class="badge">${m.coverage.used}/${m.coverage.candidates} chunks · ${m.coverage.domains} domains</span>`);
+  if(m.reason) bits.push(`<span class="badge warn">${esc(m.reason)}</span>`);
+  const d = m.degraded||{};
+  Object.keys(d).filter(k=>d[k]).forEach(k => bits.push(`<span class="badge warn">${k} unavailable</span>`));
+  metaEl.innerHTML = bits.join('');
+}
+
+async function search(query){
+  go.disabled = true;
+  answerCard.classList.add('hidden'); answerEl.innerHTML=''; metaEl.innerHTML='';
+  sourcesEl.innerHTML=''; document.querySelectorAll('h2.sec').forEach(e=>e.remove());
+  statusEl.innerHTML = '<span class="dot"></span>Searching…';
+  let answer = '', srcHeaderAdded = false, gotToken = false;
+
+  const body = { query, options: { stream:true, synthesize: $('#synth').checked, freshness: $('#fresh').value, max_sources: 8 } };
+  let resp;
+  try {
+    resp = await fetch('/v1/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  } catch(e){ statusEl.textContent = 'Request failed: ' + e; go.disabled=false; return; }
+
+  const reader = resp.body.getReader(), dec = new TextDecoder();
+  let buf = '';
+  const ensureSrcHeader = () => { if(!srcHeaderAdded){ const h=document.createElement('h2'); h.className='sec'; h.textContent='Sources'; sourcesEl.before(h); srcHeaderAdded=true; } };
+
+  while(true){
+    const {done, value} = await reader.read();
+    if(done) break;
+    buf += dec.decode(value, {stream:true});
+    let i;
+    while((i = buf.indexOf('\n\n')) >= 0){
+      const raw = buf.slice(0,i); buf = buf.slice(i+2);
+      let ev='message', data='';
+      for(const line of raw.split('\n')){
+        if(line.startsWith('event:')) ev = line.slice(6).trim();
+        else if(line.startsWith('data:')) data += line.slice(5).trim();
+      }
+      let payload; try { payload = JSON.parse(data); } catch { continue; }
+      if(ev==='source'){ ensureSrcHeader(); addSource(payload); }
+      else if(ev==='token'){ gotToken=true; answerCard.classList.remove('hidden'); answer += payload.t; renderAnswer(answer); statusEl.innerHTML='<span class="dot"></span>Generating answer…'; }
+      else if(ev==='citations'){ /* sources already shown; citations reconcile */ }
+      else if(ev==='meta'){ answerCard.classList.remove('hidden'); if(!gotToken && payload.mode==='retrieve'){ answerEl.innerHTML='<span style="color:var(--muted)">Retrieve-only — synthesis disabled or LLM unavailable. See sources below.</span>'; } renderMeta(payload); }
+      else if(ev==='error'){ statusEl.textContent = 'Error: ' + (payload.detail||'synthesis failed'); }
+    }
+  }
+  statusEl.textContent = '';
+  go.disabled = false;
+}
+
+form.addEventListener('submit', e => { e.preventDefault(); const q = input.value.trim(); if(q) search(q); });
+</script>
+</body>
+</html>

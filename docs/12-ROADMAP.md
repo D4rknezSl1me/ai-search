@@ -185,11 +185,15 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
 **Exit criteria:** stable at target scale on current hardware; quality metrics improved vs P2;
 operational runbooks + backups tested.
 
-## Phase 5 — Web UI
+## Phase 5 — Web UI  🔨 in progress
 
 **Goal:** client-facing product.
 
-- Search UI: query box, streamed answer, source cards, filters/facets, history.
+- [~] Search UI: query box, streamed answer, source cards, filters/facets, history. **Started:**
+  `ai/app/static/index.html` served at `GET /` — a no-build single page that streams `/v1/search`
+  (SSE), renders the cited answer with clickable `[n]` chips + source cards + confidence/coverage/
+  degradation, with synthesize + freshness controls; verified in a real browser. Filters/facets +
+  history still to come.
 - Coverage/status views; monitoring dashboards for clients.
 - Auth/onboarding; usage/billing views.
 

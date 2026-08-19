@@ -43,6 +43,37 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-20 — Phase 5: search Web UI (minimal, self-hosted, streaming)
+
+**What**
+- First **client-facing UI** (Phase 5): `ai/app/static/index.html` — a self-contained, no-build
+  single page (HTML + inline CSS + vanilla JS) served by ai-api at `GET /` (`main.py` reads it once
+  and returns `HTMLResponse`). A query box streams `/v1/search` (SSE over `fetch`+`ReadableStream`),
+  rendering: the **answer with inline [n] citation chips** (click → scrolls/flashes the source), a
+  meta row (mode, confidence, coverage, and `degraded` badges), and numbered **source cards**
+  (title/domain/url/snippet). Options for synthesize on/off and freshness (auto|fresh|any). Handles
+  the retrieve-only path (no LLM) gracefully. Dark, product-grade styling; fully local (no CDNs).
+
+**Why**
+- The backend loop is proven (crawl→index→retrieve→cited synthesis), but a product needs a face.
+  This makes the whole system usable and demonstrable in a browser without any build tooling —
+  consistent with the self-hosted, zero-dependency ethos (CLAUDE.md rule 2). It's the Phase 5
+  "search UI: query box, streamed answer, source cards" exit-criteria seed.
+
+**Verification**
+- Offline: `ai/tests` **89 pass**; `app.main` imports with the `/` route registered (UI 9 KB).
+- Live: `GET /` → the page loads (logo + form). `/v1/search` streaming emits the expected SSE
+  sequence `source×3 → token×N → citations → meta → done`.
+- **Real-browser (Playwright)**: navigated to `http://localhost:8000/`, typed "Who was Ada Lovelace
+  and what did she work on?", submitted. The page rendered the streamed answer — *"According to
+  source [2], Ada Lovelace was the first computer programmer … Source [6] confirms the analytical
+  engine … designed by Charles Babbage."* — with **clickable [2]/[6] citation chips** linking to
+  their cards, meta badges (`synthesize mode · confidence 0.625 · 8/66 chunks · 5 domains · vector
+  unavailable · reranker unavailable`), and 8 source cards (incl. [2] Ada Lovelace → ex.com,
+  [6] Analytical Engine). Console clean after adding an inline favicon.
+
+---
+
 ## 2026-08-20 — Milestone: full product loop verified live (grounded cited synthesis)
 
 **What** — Brought up the local synthesis LLM (`llm`/Ollama; the `llama3.1:8b` model, 4.58 GB, was

@@ -13,9 +13,11 @@ import logging
 import time
 from contextlib import asynccontextmanager
 
+from pathlib import Path
+
 import httpx
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from . import clients, indexer, indexes, reconcile
 from .config import settings
@@ -55,6 +57,17 @@ def _filters(f) -> Filters:
         source_types=f.source_types, languages=f.languages,
         domains_include=f.domains_include, domains_exclude=f.domains_exclude,
     )
+
+
+# ----------------------------------------------------------------------- UI ---
+
+_UI_HTML = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def ui() -> str:
+    """Minimal self-hosted search UI (Phase 5). Streams cited answers from /v1/search."""
+    return _UI_HTML
 
 
 # ------------------------------------------------------------------- health ---

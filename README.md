@@ -125,6 +125,7 @@ docker run --rm --network ai-search_default -v "$PWD/ai/eval:/eval" -w /eval \
   decomposition, RRF-fused, degrades to the original query; rule-based intent classification driving
   intent→freshness); freshness-aware ranking (`freshness=auto|fresh|any` blends recency into
   ordering); query-time near-duplicate dedup (shingle-Jaccard, frees source slots for distinct info)
-- [ ] Phase 5 — Web UI
+- [ ] **Phase 5 — Web UI** (in progress) — self-hosted search UI at `http://localhost:8000/`:
+  streamed cited answers, clickable citation chips, source cards, confidence/coverage/degradation
 
 See [docs/12-ROADMAP.md](docs/12-ROADMAP.md) for details.
