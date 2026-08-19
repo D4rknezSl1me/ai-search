@@ -170,7 +170,9 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
 - [x] **Retrieval result cache** (`ai/app/cache.py`): short-TTL in-process TTL/LRU memoization of
   identical queries, bypassed for freshness-driven ranking so it never hides freshly-crawled content
   — cuts repeated embed/ANN/lexical/rerank work on the single-GPU box (docs/07 caching).
-- Coverage/stats API; monitoring/alerts (saved queries).
+- [~] Coverage/stats API ✅ crawler side (`GET /internal/coverage` → totals, by content-type/lang,
+  frontier-by-state, recrawl validators/eligibility via `store.CoverageStats`). Monitoring/alerts +
+  richer intelligence-plane coverage still to come.
 - Auth, API keys, rate limiting, usage metering (multi-tenant readiness).
 - Backups, runbooks, capacity planning; quantize vectors for density.
 

@@ -37,6 +37,32 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: crawler coverage/stats API (operator visibility)
+
+**What**
+- `GET /internal/coverage` returned only `{total_documents}`. Replaced with a real coverage summary
+  (`store.CoverageStats` → `store/coverage.go`): total documents, source count, **documents by
+  content-type** (base type, charset stripped) and **by language** (top 10 each), **frontier by
+  state**, plus recrawl visibility — `with_validators` (frontier rows carrying an ETag/Last-Modified)
+  and `recrawlable` (FETCHED rows with a `last_fetched_at`). A small `labelCounts` helper runs the
+  grouped aggregates; the handler just serializes the struct.
+
+**Why**
+- Phase 4 "coverage/stats API." Operating a breadth-first crawl (and the future UI) needs to see
+  *what* has been collected and the frontier's health at a glance — content-type/language mix flags
+  extraction gaps, frontier-by-state shows progress/failures, and the recrawl counters make the new
+  freshness machinery observable. Cheap (a few `GROUP BY`s), no new dependency.
+
+**Verification** (crawler rebuilt into the running stack):
+- `go build ./...` + `go vet ./...` clean.
+- **Live** `GET /internal/coverage` against the session's real data returned: `total_documents:80`,
+  `sources:13`; by_content_type `text/html:49, application/social+json:30, text/plain:1` (the
+  plain-text extraction shows up); by_lang `en:58, unknown:21, sv:1`; frontier `SKIPPED:319,
+  FETCHED:67, FAILED:2`; `with_validators:3`, `recrawlable:5` — i.e. the conditional-GET/recrawl
+  features are reflected in the numbers.
+
+---
+
 ## 2026-08-19 — Phase 4: conditional GET (ETag / If-Modified-Since) — cheap recrawls
 
 **What**

@@ -355,12 +355,12 @@ func (s *Server) frontier(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) coverage(w http.ResponseWriter, r *http.Request) {
-	total, err := s.store.TotalDocuments(r.Context())
+	cov, err := s.store.CoverageStats(r.Context())
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"total_documents": total})
+	writeJSON(w, http.StatusOK, cov)
 }
 
 func (s *Server) document(w http.ResponseWriter, r *http.Request) {

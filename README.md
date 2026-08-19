@@ -79,7 +79,7 @@ curl -X POST localhost:8090/internal/feeds/ingest \
 # Cold-start breadth from the free Common Crawl URL index (by domain):
 curl -X POST localhost:8090/internal/commoncrawl/ingest \
   -d '{"campaign_id":1,"domain":"example.com","max_urls":500}'
-curl localhost:8090/internal/coverage                # total documents indexed
+curl localhost:8090/internal/coverage                # coverage: totals, by type/lang, frontier state
 curl localhost:8090/internal/documents/1             # a document's metadata
 curl "localhost:8090/internal/render/queue"          # browser render queue by state (Phase 3)
 curl localhost:8090/internal/social/tracked          # freshness registry: tracked entities (Phase 3)
