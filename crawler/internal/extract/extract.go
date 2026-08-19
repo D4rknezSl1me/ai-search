@@ -28,6 +28,7 @@ type Document struct {
 	ContentHash []byte
 	Simhash     uint64
 	Links       []string
+	Keyphrases  []string
 }
 
 // FromHTML extracts a Document from raw HTML fetched at finalURL.
@@ -101,6 +102,7 @@ func buildDoc(title, author, text string, published *time.Time, excerpt, site, f
 		SiteName:    strings.TrimSpace(site),
 		ContentHash: sum[:],
 		Simhash:     simhash.Compute(text),
+		Keyphrases:  Keyphrases(text, 8),
 	}
 }
 

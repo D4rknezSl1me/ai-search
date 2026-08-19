@@ -228,6 +228,9 @@ func (s *Scheduler) index(ctx context.Context, item store.FrontierItem, res *fet
 		"text_len":  len(doc.Text),
 		"truncated": res.Truncated,
 	}
+	if len(doc.Keyphrases) > 0 {
+		meta["keyphrases"] = doc.Keyphrases
+	}
 	for k, v := range extraMeta {
 		meta[k] = v
 	}

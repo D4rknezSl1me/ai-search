@@ -140,7 +140,9 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
 - [x] **Plain-text (`text/*`) extraction** (`fetch.IsText` + `extract.FromPlainText`, shared
   `Scheduler.index`): non-HTML text (plain, markdown, csv, logs) now indexes instead of being
   dropped — a free recall win (no new dependency). PDF/doc binary parsing still open.
-- Enrichment: NER, keyphrases, topic tags; media OCR/ASR (optional).
+- [~] Enrichment: **keyphrases/topic tags done** (`extract.Keyphrases`, RAKE → `documents.meta.
+  keyphrases` for every doc). NER, media OCR/ASR, and indexing the tags into OpenSearch for
+  search-time faceting/boosting still to come.
 - [x] **Query understanding — LLM expansion/decomposition** (`ai/app/understand.py`): the local
   LLM rewrites each query into paraphrases + decomposed sub-questions; every planned query is
   retrieved (hybrid) and the runs are RRF-fused, so a chunk agreed on by several phrasings accrues

@@ -37,6 +37,36 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: keyphrase extraction (enrichment / topic tags)
+
+**What**
+- New `crawler/internal/extract/keyphrases.go` — **RAKE** (Rapid Automatic Keyword Extraction), pure
+  and dependency-free: split the text into candidate phrases at stopwords + punctuation, score each
+  word by `degree/frequency`, rank phrases by the sum of their word scores, return the top N. A
+  compact English stopword set; over-long candidates (> 4 words) are dropped as RAKE noise.
+  `extract.buildDoc` now computes `Document.Keyphrases` (top 8) for **every** document (HTML and
+  plain-text alike), and the scheduler stamps them into `documents.meta.keyphrases`.
+
+**Why**
+- Phase 4 enrichment (docs/05 §9: "keyphrases, topic tags"). Per-document topic tags are the
+  substrate for faceted browse/filtering and give lexical retrieval extra high-signal terms to match
+  on. Recall-first: cheap, computed inline at extract time, no new dependency or model. Quality is
+  breadth-first — RAKE also surfaces some reference-list noise on citation-heavy pages; refining
+  (numeric/date filtering, indexing the tags into OpenSearch for search-time use) is a follow-up.
+
+**Verification** (golang:1.25 container; crawler rebuilt into the running stack):
+- `go build ./...` + `go vet ./...` clean; `go test ./internal/extract/...` green. New
+  `keyphrases_test.go`: recurring multi-word terms surface ("machine learning", "training datasets");
+  phrases never contain a stopword or punctuation; `max`/empty respected; over-long candidates
+  dropped. **Found & fixed a bug via a scratch debug test**: the break regex `[^\p{L}\p{N}]+` matched
+  *whitespace* too, so every word became its own phrase — fixed to `[^\p{L}\p{N}\s]+` (punctuation
+  only), after which multi-word phrases surface correctly.
+- **Live end-to-end**: crawled `en.wikipedia.org/wiki/Web_crawler` (fresh) → `documents.meta.keyphrases`
+  = e.g. "search engine digital libraries", "microsoft azure cognitive search", "prevent major search
+  engines", "retrieve data much quicker" (plus some citation noise, as expected).
+
+---
+
 ## 2026-08-19 — Phase 4: rate-limit handling + adaptive backoff (recall reliability)
 
 **What**
