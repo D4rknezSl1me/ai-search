@@ -5,6 +5,9 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ## Backlog (deferred follow-ups)
 
+- [x] **Live verification of Phase 4 intelligence-plane retrieval** — done (2026-08-20, see entry
+  below). The query-understanding / freshness / dedup / intent / cache rewrite of `retrieve()` is
+  verified against a live OpenSearch (GPU-free; vector/rerank/LLM degrade gracefully).
 - [x] **Live end-to-end verification of Phase 4 discovery + text extraction** — done (2026-08-19,
   see the live-verification entry below). The four features whose live checks were previously
   deferred (sitemap / RSS-Atom / Common Crawl ingestion, plain-text extraction) are now verified
@@ -34,6 +37,33 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   loop — a long-lived Chromium claims jobs, renders JS-heavy pages, and POSTs the resolved DOM back
   for indexing. Verified live (rendered a real Wikipedia SPA → indexed). Lightweight anti-detection
   is in place; the full fingerprint/proxy stack remains a later Phase 3 refinement.
+
+---
+
+## 2026-08-20 — Phase 4: live verification of the intelligence-plane retrieval pipeline
+
+**What** — Brought up the search plane **without the GPU stack** (base `qdrant` + `opensearch`, then
+a freshly built `ai-api`; TEI/reranker/Ollama intentionally left down) and exercised `/v1/retrieve`
+to prove the Phase 4 `retrieve()` rewrite (intent → expansion → multi-query RRF fusion → dedup →
+freshness → cache, plus the new response contract) works end-to-end against real infrastructure and
+degrades gracefully. Discharges the "deferred live" notes for the query-understanding, freshness,
+dedup, intent, and cache features.
+
+**Verification** (ai-api `/healthz` ok; OpenSearch green with real Phase-2 crawl data persisted in
+the volume — 71 candidate chunks — plus two hand-indexed chunks):
+- **Entity query** "who was the first computer programmer" → `intent:"entity_lookup"`,
+  `expansions:[]` (Ollama down → `plan_query` degraded to the original query), `degraded.vector:true`
+  (TEI down → `vector_search` empty), `reranked:false` (reranker down), `coverage.candidates:71`,
+  5 de-duplicated results across 3 domains — the full lexical→fuse→assemble path plus the new
+  `intent`/`freshness`/`expansions` response fields, all correct.
+- **News query** "latest news about artificial intelligence" → `intent:"news_fresh"` and
+  `freshness:"fresh"` — the intent→freshness auto-upgrade fires live.
+- **Cache** — two identical queries returned consistent results (same top chunk `28:0`), exercising
+  the `TTLCache` path without error.
+- **Graceful degradation** confirmed on the live path: every optional dependency (vector index,
+  reranker, LLM) was absent and retrieval still returned ranked results — recall-first, as designed.
+- No code changes; no bugs found. Full GPU-stack synthesis (`/v1/search` with Ollama) remains for a
+  deliberate GPU bring-up (TEI has the noted sm_120 warmup caveat).
 
 ---
 
