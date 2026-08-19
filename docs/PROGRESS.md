@@ -30,6 +30,47 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: sitemap-based seed discovery (bulk breadth)
+
+**What**
+- New `crawler/internal/sitemap` package — discovers seed URLs from XML sitemaps and sitemap
+  indexes, the highest-leverage breadth source on the open web (one document can list every URL a
+  site wants crawled). Two pieces, both offline-testable:
+  - `Parse(data)` — decodes a `<urlset>` (page URLs) or `<sitemapindex>` (child sitemaps) via
+    `encoding/xml`, matching child elements by local-name so the sitemap XML namespace is a
+    non-issue; **transparently gunzips** gzip payloads (`.xml.gz` is common); trims/drops empty locs.
+  - `Discover(ctx, rootURL, fetch, limits)` — fetches the root, follows **one level** of
+    sitemap-index nesting, de-dupes, and enforces `MaxURLs`/`MaxSitemaps` caps so a huge or hostile
+    index can't fan out or exhaust memory. `fetch` is an injected `FetchFunc`, so the recursion is
+    unit-tested with a fake (no network). Root fetch/parse failure is fatal; a bad **child** sitemap
+    is skipped (best-effort, recall-first — one broken shard shouldn't lose the rest).
+- Control endpoint `POST /internal/sitemap/ingest {campaign_id, url, max_urls?}` (`internal/api`):
+  validates the campaign exists (404 otherwise), runs `Discover` with the crawler's HTTP fetcher
+  (200-only, 20 MiB cap, 20 s timeout), and enqueues the discovered URLs at depth 0 through the
+  **same** canonicalize→`EnsureSource`→`AddURL` path as campaign seeds (frontier unique constraint
+  dedupes). Refactored the existing `seed()` to share a new `enqueueURLs` helper. Returns
+  `{discovered, enqueued}`; new counter `crawler_sitemap_urls_total`. `Server` now holds a fetcher
+  (default-initialized in `NewServer`, so the signature and existing callers/tests are unchanged).
+
+**Why**
+- Maximum recall is the north star (CLAUDE.md), and breadth of the frontier is the biggest lever:
+  link-following only reaches pages already linked from crawled pages, while a sitemap enumerates a
+  site's canonical set directly — thousands of URLs in one fetch. Sitemaps are a free/open source
+  (rule 2). This is bulk discovery input to the existing frontier, not a new pipeline.
+
+**Verification** (golang:1.25-alpine container; `go mod tidy` at build per the Dockerfile — the repo
+keeps a minimal `go.mod` and no committed `go.sum`, restored after verifying):
+- `go build ./...` clean; `go vet ./...` clean.
+- `go test ./internal/sitemap/... ./internal/api/...` → both **ok**. New `sitemap_test.go` (10):
+  parse urlset (trim + drop empty loc), parse index, **gzip** round-trip, malformed-XML error;
+  `Discover` flat, index-follows-children-with-cross-child-dedup, root-fetch-error-fatal,
+  bad-child-skipped, `MaxURLs` cap, `MaxSitemaps` cap (fetch-count bounded). Existing `internal/api`
+  tests still pass (unchanged `NewServer` signature).
+- **Deferred:** live endpoint call against a running crawler+Postgres (stack not up this iteration);
+  the discovery/parse logic is fully unit-covered and the enqueue path is the proven `seed()` path.
+
+---
+
 ## 2026-08-19 — Phase 4: sentence-aware chunking (no mid-sentence/mid-word splits)
 
 **What**

@@ -121,6 +121,10 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
 **Goal:** harden, deepen, and refine over collected data.
 
 - Recrawl/freshness scheduling; incremental/conditional GET; change detection.
+- [x] **Sitemap-based seed discovery** (`crawler/internal/sitemap` + `POST /internal/sitemap/ingest`):
+  parse `sitemap.xml` / sitemap-index (gzip-aware), follow one index level with URL/sitemap caps,
+  and bulk-enqueue the listed URLs into a campaign's frontier — breadth beyond link-following
+  (recall-first). Free/open source, no paid dependency.
 - Enrichment: NER, keyphrases, topic tags; media OCR/ASR (optional).
 - [x] **Query understanding — LLM expansion/decomposition** (`ai/app/understand.py`): the local
   LLM rewrites each query into paraphrases + decomposed sub-questions; every planned query is

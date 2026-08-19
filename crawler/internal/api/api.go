@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,7 +15,9 @@ import (
 
 	"github.com/ai-search/crawler/internal/blob"
 	"github.com/ai-search/crawler/internal/crawl"
+	"github.com/ai-search/crawler/internal/fetch"
 	"github.com/ai-search/crawler/internal/metrics"
+	"github.com/ai-search/crawler/internal/sitemap"
 	"github.com/ai-search/crawler/internal/social"
 	"github.com/ai-search/crawler/internal/store"
 	"github.com/ai-search/crawler/internal/urlx"
@@ -24,14 +27,27 @@ import (
 // reports a retryable failure.
 const renderRetryBackoff = 60 * time.Second
 
+// sitemap fetch defaults (control-plane fetch, independent of a campaign).
+const (
+	sitemapFetchTimeout = 20 * time.Second
+	sitemapMaxBodyBytes = 20 << 20 // sitemaps can be large; cap at 20 MiB
+	sitemapUserAgent    = "Mozilla/5.0 (compatible; ai-search/0.1; +sitemap)"
+)
+
 type Server struct {
-	store  *store.Store
-	blob   *blob.Store
-	social *social.Registry
+	store   *store.Store
+	blob    *blob.Store
+	social  *social.Registry
+	fetcher *fetch.Fetcher
 }
 
 func NewServer(st *store.Store, bl *blob.Store, sr *social.Registry) *Server {
-	return &Server{store: st, blob: bl, social: sr}
+	return &Server{
+		store:   st,
+		blob:    bl,
+		social:  sr,
+		fetcher: fetch.New(sitemapFetchTimeout, sitemapMaxBodyBytes, sitemapUserAgent),
+	}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -51,6 +67,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/internal/render/claim", s.renderClaim)       // POST {"n":N}
 	mux.HandleFunc("/internal/render/complete", s.renderComplete) // POST {"id":ID,"ok":bool}
 	mux.HandleFunc("/internal/render/ingest", s.renderIngest)     // POST {"id":ID,"url":...,"html":...}
+	mux.HandleFunc("/internal/sitemap/ingest", s.sitemapIngest)   // POST {"campaign_id":ID,"url":...}
 	return mux
 }
 
@@ -137,8 +154,14 @@ func (s *Server) createCampaign(w http.ResponseWriter, r *http.Request) {
 
 // seed enqueues seed URLs at depth 0 and returns how many were newly added.
 func (s *Server) seed(ctx context.Context, campaignID int64, seeds []string) int {
+	return s.enqueueURLs(ctx, campaignID, seeds)
+}
+
+// enqueueURLs canonicalizes and enqueues a batch of URLs at depth 0, returning
+// how many were newly added (dedup via the frontier's unique constraint).
+func (s *Server) enqueueURLs(ctx context.Context, campaignID int64, urls []string) int {
 	added := 0
-	for _, raw := range seeds {
+	for _, raw := range urls {
 		canon, err := urlx.Canonicalize(raw)
 		if err != nil {
 			continue
@@ -154,6 +177,61 @@ func (s *Server) seed(ctx context.Context, campaignID int64, seeds []string) int
 		}
 	}
 	return added
+}
+
+type sitemapIngestReq struct {
+	CampaignID int64  `json:"campaign_id"`
+	URL        string `json:"url"`
+	MaxURLs    int    `json:"max_urls"`
+}
+
+// sitemapIngest fetches a sitemap (or sitemap index) and enqueues the page URLs
+// it lists into the given campaign's frontier — bulk breadth discovery beyond
+// link-following (recall-first, CLAUDE.md north star).
+func (s *Server) sitemapIngest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST only"})
+		return
+	}
+	var req sitemapIngestReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	req.URL = strings.TrimSpace(req.URL)
+	if req.CampaignID == 0 || req.URL == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "campaign_id and url are required"})
+		return
+	}
+	ctx := r.Context()
+	if _, err := s.store.GetCampaign(ctx, req.CampaignID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown campaign"})
+		return
+	}
+
+	fetchFn := func(ctx context.Context, u string) ([]byte, error) {
+		res, err := s.fetcher.Get(ctx, u)
+		if err != nil {
+			return nil, err
+		}
+		if res.Status < 200 || res.Status >= 300 {
+			return nil, fmt.Errorf("sitemap fetch %s: status %d", u, res.Status)
+		}
+		return res.Body, nil
+	}
+
+	urls, err := sitemap.Discover(ctx, req.URL, fetchFn, sitemap.Limits{MaxURLs: req.MaxURLs})
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	enqueued := s.enqueueURLs(ctx, req.CampaignID, urls)
+	metrics.SitemapURLs.Add(float64(enqueued))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"campaign_id": req.CampaignID,
+		"discovered":  len(urls),
+		"enqueued":    enqueued,
+	})
 }
 
 func (s *Server) frontier(w http.ResponseWriter, r *http.Request) {

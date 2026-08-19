@@ -81,6 +81,13 @@ var (
 		Name: "crawler_render_ingested_total",
 		Help: "Browser-rendered documents landed in the pipeline, by outcome.",
 	}, []string{"result"}) // indexed | duplicate | empty
+
+	// --- sitemap discovery (Phase 4) ---
+
+	SitemapURLs = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "crawler_sitemap_urls_total",
+		Help: "URLs newly enqueued into the frontier from sitemap ingestion.",
+	})
 )
 
 // StatusClass maps an HTTP status code to a coarse class label.

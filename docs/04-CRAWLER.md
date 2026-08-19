@@ -117,7 +117,10 @@ maintenance surface, monitored via metrics (block rate per host/platform).
 
 All discovery uses **free/open** sources only (no paid search APIs — see `CLAUDE.md`):
 
-- Seed lists & sitemaps (`/sitemap.xml`, sitemap indexes).
+- Seed lists & sitemaps (`/sitemap.xml`, sitemap indexes). **Implemented:**
+  `crawler/internal/sitemap` (gzip-aware parse; follows one sitemap-index level with URL/sitemap
+  caps) behind `POST /internal/sitemap/ingest {campaign_id, url}`, which bulk-enqueues the listed
+  URLs into the campaign frontier via the same canonicalize→`AddURL` path as seeds.
 - Outlinks from crawled pages (recursive, scope-bounded) — the primary breadth engine.
 - RSS/Atom feeds for freshness.
 - **Common Crawl URL indexes** (free) for massive cold-start breadth — a free substitute for
