@@ -26,8 +26,9 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 - [x] **Richer query understanding** — done (2026-08-19). LLM expansion/decomposition
   (`ai/app/understand.py`), freshness-aware ranking (`ai/app/freshness.py`), and rule-based intent
   classification driving intent→freshness boosting (`ai/app/intent.py`). See entries below.
-- [ ] **Index reconciliation** — reconcile `documents.n_chunks` vs actual Qdrant/OpenSearch
-  counts; prune stale chunks when a doc is re-chunked to fewer pieces.
+- [x] **Index reconciliation** — done (2026-08-20). `ai/app/reconcile.py` +
+  `POST /internal/reconcile` prune chunks orphaned in Qdrant/OpenSearch (index ≥ `n_chunks`);
+  verified live. See entry below.
 - [ ] **max_pages best-effort overshoot** — tighten the concurrent cap if it matters.
 - [ ] Non-HTML parsing (PDF/doc) and JS/social rendering are phase-tracked (Phase 3), not backlog.
 - [x] **Playwright browser-worker pool** — **done** (2026-07-09, see entries below): the
@@ -37,6 +38,35 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   loop — a long-lived Chromium claims jobs, renders JS-heavy pages, and POSTs the resolved DOM back
   for indexing. Verified live (rendered a real Wikipedia SPA → indexed). Lightweight anti-detection
   is in place; the full fingerprint/proxy stack remains a later Phase 3 refinement.
+
+---
+
+## 2026-08-20 — Phase 4: index reconciliation (prune orphaned chunks)
+
+**What**
+- New `ai/app/reconcile.py` — prunes chunks orphaned in Qdrant/OpenSearch when a document is
+  re-indexed to fewer pieces (index ≥ current `n_chunks`), so stale chunks can't keep surfacing.
+  - `valid_chunk_ids(id, n)` → the chunk_ids a document should currently have.
+  - `prune_document(id, n_chunks)` — deletes this document's chunks **not** in the valid set from
+    both stores: OpenSearch `_delete_by_query` (must document_id, must_not chunk_id∈valid; returns
+    `deleted`) and Qdrant `points/delete` by the same filter (counted first via `points/count`).
+    Idempotent — only ever removes chunks outside the valid set, so re-runs converge.
+  - `reconcile_all(limit)` scans indexed documents (`n_chunks > 0`) and prunes each, aggregating
+    counts. Config `reconcile_batch` (1000).
+- Endpoint `POST /internal/reconcile[?document_id=…]` — one document or a batch.
+
+**Why**
+- Backlog + Phase 4 quality (docs/12): "reconcile `documents.n_chunks` vs actual store counts; prune
+  stale chunks when a doc is re-chunked to fewer pieces." Orphaned chunks silently degrade precision
+  (a deleted/rewritten passage keeps matching). This makes the indexes self-correcting and is a
+  safety net for the freshness/recrawl machinery as re-indexing paths mature.
+
+**Verification**
+- **Offline**: `ai/tests` **89 pass** (2 new `test_reconcile.py` for `valid_chunk_ids`).
+- **Live** (ai-api rebuilt; real Qdrant + OpenSearch): inserted a Postgres doc with `n_chunks=2` and
+  indexed **4** chunks (0–3) into *both* stores. `POST /internal/reconcile?document_id=…` returned
+  `{opensearch:2, qdrant:2}`; both stores dropped from 4→2, and the survivors were exactly the valid
+  `…:0, …:1` (orphans `…:2, …:3` pruned). Test artifacts cleaned up afterward.
 
 ---
 

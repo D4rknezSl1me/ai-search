@@ -17,7 +17,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import clients, indexer, indexes
+from . import clients, indexer, indexes, reconcile
 from .config import settings
 from .retrieval import Filters, retrieve
 from .schemas import RetrieveRequest, RetrieveResponse, ResultItem, SearchRequest
@@ -108,6 +108,19 @@ async def metrics() -> str:
 
 
 # --------------------------------------------------------------- index admin ---
+
+@app.post("/internal/reconcile")
+async def reconcile_endpoint(document_id: int | None = None) -> dict:
+    """Prune orphaned chunks (index ≥ n_chunks) from Qdrant + OpenSearch. Scope to
+    one document with ?document_id=…, else scan a batch of indexed documents."""
+    if document_id is not None:
+        pool = await clients.pg()
+        n = await pool.fetchval("SELECT n_chunks FROM documents WHERE id = $1", document_id)
+        if n is None:
+            return {"error": "unknown document", "document_id": document_id}
+        return {"document_id": document_id, **await reconcile.prune_document(document_id, n)}
+    return await reconcile.reconcile_all()
+
 
 @app.post("/internal/reindex")
 async def reindex() -> dict:

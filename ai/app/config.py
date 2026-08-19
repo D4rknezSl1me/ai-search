@@ -62,6 +62,7 @@ class Settings(BaseSettings):
 
     # --- Indexer ---
     indexer_batch: int = 32          # docs per poll
+    reconcile_batch: int = 1000      # docs scanned per /internal/reconcile call
     embed_batch: int = 32            # chunks per TEI call
     indexer_poll_seconds: float = 5.0
 

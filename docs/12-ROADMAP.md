@@ -177,6 +177,9 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   frontier-by-state, recrawl validators/eligibility via `store.CoverageStats`). Monitoring/alerts +
   richer intelligence-plane coverage still to come.
 - Auth, API keys, rate limiting, usage metering (multi-tenant readiness).
+- [x] **Index reconciliation** (`ai/app/reconcile.py` + `POST /internal/reconcile`): prune chunks
+  orphaned in Qdrant/OpenSearch (index ≥ `n_chunks`) so re-indexing to fewer pieces can't leave
+  stale results; idempotent, verified live.
 - Backups, runbooks, capacity planning; quantize vectors for density.
 
 **Exit criteria:** stable at target scale on current hardware; quality metrics improved vs P2;
