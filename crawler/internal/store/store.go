@@ -152,8 +152,41 @@ func (s *Store) ClaimNext(ctx context.Context, n int) ([]FrontierItem, error) {
 }
 
 func (s *Store) MarkFetched(ctx context.Context, id int64) error {
-	_, err := s.pool.Exec(ctx, `UPDATE frontier_urls SET state = 'FETCHED' WHERE id = $1`, id)
+	_, err := s.pool.Exec(ctx,
+		`UPDATE frontier_urls SET state = 'FETCHED', last_fetched_at = now() WHERE id = $1`, id)
 	return err
+}
+
+// EnsureRecrawlColumns adds the recrawl bookkeeping column idempotently, so the
+// feature works on volumes that predate the 0005 migration (initdb only applies
+// migrations on first init).
+func (s *Store) EnsureRecrawlColumns(ctx context.Context) error {
+	_, err := s.pool.Exec(ctx,
+		`ALTER TABLE frontier_urls ADD COLUMN IF NOT EXISTS last_fetched_at timestamptz`)
+	return err
+}
+
+// RequeueForRecrawl re-enqueues FETCHED URLs last fetched longer than olderThan
+// ago back to PENDING (oldest first, up to limit), giving them a fresh retry
+// budget so re-crawls keep content current. Returns the number re-enqueued.
+func (s *Store) RequeueForRecrawl(ctx context.Context, olderThan time.Duration, limit int) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE frontier_urls
+		SET state = 'PENDING', attempts = 0, next_attempt = now(), claimed_at = NULL
+		WHERE id IN (
+			SELECT id FROM frontier_urls
+			WHERE state = 'FETCHED'
+			  AND last_fetched_at IS NOT NULL
+			  AND last_fetched_at < now() - $1::interval
+			ORDER BY last_fetched_at ASC
+			LIMIT $2
+			FOR UPDATE SKIP LOCKED
+		)`,
+		olderThan.String(), limit)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 func (s *Store) MarkSkipped(ctx context.Context, id int64) error {

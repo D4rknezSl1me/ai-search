@@ -98,6 +98,11 @@ var (
 		Name: "crawler_commoncrawl_urls_total",
 		Help: "URLs newly enqueued into the frontier from Common Crawl index ingestion.",
 	})
+
+	RecrawlRequeued = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "crawler_recrawl_requeued_total",
+		Help: "FETCHED URLs re-enqueued for recrawl because they were stale.",
+	})
 )
 
 // StatusClass maps an HTTP status code to a coarse class label.

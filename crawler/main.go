@@ -20,6 +20,7 @@ import (
 	"github.com/ai-search/crawler/internal/crawl"
 	"github.com/ai-search/crawler/internal/fetch"
 	"github.com/ai-search/crawler/internal/freshness"
+	"github.com/ai-search/crawler/internal/metrics"
 	"github.com/ai-search/crawler/internal/social"
 	"github.com/ai-search/crawler/internal/store"
 )
@@ -47,6 +48,10 @@ func main() {
 	if err := st.EnsureTrackedEntities(ctx); err != nil {
 		log.Fatalf("ensure tracked_entities: %v", err)
 	}
+	// Recrawl bookkeeping column (0005): the recrawl scheduler needs it.
+	if err := st.EnsureRecrawlColumns(ctx); err != nil {
+		log.Fatalf("ensure recrawl columns: %v", err)
+	}
 
 	log.Printf("connecting to MinIO at %s ...", cfg.MinIOEndpoint())
 	bl, err := blob.New(ctx, cfg.MinIOEndpoint(), cfg.MinIOUser, cfg.MinIOPassword, cfg.MinIOBucket)
@@ -64,6 +69,13 @@ func main() {
 
 	// Reaper: requeue URLs orphaned in FETCHING (worker died mid-fetch).
 	go runReaper(ctx, st, time.Duration(cfg.ReapAfterS)*time.Second)
+
+	// Recrawl scheduler: periodically re-enqueue FETCHED URLs older than the
+	// recrawl horizon so the index stays fresh (off when CRAWLER_RECRAWL_AFTER_S=0).
+	if cfg.RecrawlAfterS > 0 {
+		go runRecrawler(ctx, st, time.Duration(cfg.RecrawlAfterS)*time.Second, cfg.RecrawlBatch)
+		log.Printf("recrawl scheduler started (horizon %ds, batch %d)", cfg.RecrawlAfterS, cfg.RecrawlBatch)
+	}
 
 	// Social adapter registry (credential-free platforms). Exposed for health
 	// monitoring via the control API; login-walled adapters are added once the
@@ -108,6 +120,38 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
 	_ = srv.Shutdown(shutdownCtx)
+}
+
+// runRecrawler periodically re-enqueues FETCHED URLs older than the recrawl
+// horizon back to PENDING so their content is refreshed. The check interval is a
+// fraction of the horizon, clamped so it neither hammers nor sleeps too long.
+func runRecrawler(ctx context.Context, st *store.Store, horizon time.Duration, batch int) {
+	if horizon <= 0 {
+		return
+	}
+	interval := horizon / 4
+	if interval < time.Minute {
+		interval = time.Minute
+	}
+	if interval > time.Hour {
+		interval = time.Hour
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			n, err := st.RequeueForRecrawl(ctx, horizon, batch)
+			if err != nil {
+				log.Printf("recrawl error: %v", err)
+			} else if n > 0 {
+				metrics.RecrawlRequeued.Add(float64(n))
+				log.Printf("recrawl re-enqueued %d stale url(s)", n)
+			}
+		}
+	}
 }
 
 // runReaper periodically requeues URLs stuck in FETCHING beyond reapAfter. The

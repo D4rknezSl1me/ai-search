@@ -25,6 +25,10 @@ type Config struct {
 	MaxBodyBytes int64
 	UserAgent    string
 	ReapAfterS   int // requeue URLs stuck in FETCHING past this many seconds (0 = off)
+	// Recrawl scheduler (Phase 4): re-fetch FETCHED URLs older than this to keep
+	// content fresh. 0 = disabled.
+	RecrawlAfterS int // re-enqueue FETCHED URLs last fetched more than this ago (0 = off)
+	RecrawlBatch  int // max URLs re-enqueued per recrawl tick
 	// Freshness scheduler (Phase 3): re-ingest tracked social entities on cadence.
 	FreshnessTickS int // how often to look for due tracked entities (0 = scheduler off)
 	FreshnessBatch int // max entities claimed per tick
@@ -74,6 +78,9 @@ func Load() *Config {
 		MaxBodyBytes: int64(envInt("CRAWLER_MAX_BODY_BYTES", 5_000_000)),
 		UserAgent:    env("CRAWLER_USER_AGENT", "Mozilla/5.0 (compatible; ai-search/0.1)"),
 		ReapAfterS:   envInt("CRAWLER_REAP_AFTER_S", 300),
+
+		RecrawlAfterS: envInt("CRAWLER_RECRAWL_AFTER_S", 0),
+		RecrawlBatch:  envInt("CRAWLER_RECRAWL_BATCH", 128),
 
 		FreshnessTickS: envInt("CRAWLER_FRESHNESS_TICK_S", 30),
 		FreshnessBatch: envInt("CRAWLER_FRESHNESS_BATCH", 16),

@@ -37,6 +37,40 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: recrawl / freshness scheduling (re-fetch stale URLs)
+
+**What**
+- The frontier fetched each URL once and never revisited it, so the index went stale — a recall cap
+  for anything that changes (news, profiles, listings). Added a **recrawl scheduler** that re-enqueues
+  `FETCHED` URLs older than a horizon back to `PENDING` so the existing crawl loop refreshes them.
+  - Migration `0005_frontier_recrawl.sql` + idempotent `store.EnsureRecrawlColumns` (run at boot,
+    covers pre-migration volumes): `frontier_urls.last_fetched_at timestamptz` + a partial index on
+    `(last_fetched_at) WHERE state='FETCHED'` for cheap staleness scans.
+  - `store.MarkFetched` now stamps `last_fetched_at = now()`. New `store.RequeueForRecrawl(olderThan,
+    limit)` flips the oldest-fetched stale rows to `PENDING` with a **reset attempt budget**
+    (`attempts=0`, `claimed_at=NULL`), under `FOR UPDATE SKIP LOCKED`, returning the count.
+  - `main.runRecrawler` — a ticker (interval = horizon/4, clamped to [1m, 1h]) gated by
+    `CRAWLER_RECRAWL_AFTER_S` (0 = off), batch `CRAWLER_RECRAWL_BATCH` (128). Counter
+    `crawler_recrawl_requeued_total`. Config knobs + `.env.example`.
+  - Mirrors the existing FETCHING reaper's shape, so it's a small, well-understood addition.
+
+**Why**
+- Phase 4's headline crawler item (recrawl/freshness). Maximum recall over *current* information
+  (CLAUDE.md) requires revisiting content, not just a one-time fetch. Conditional GET (skip
+  re-processing unchanged pages via ETag/If-Modified-Since) is the natural next iteration to make
+  recrawl cheap; this lands the scheduling half first.
+
+**Verification** (crawler rebuilt into the running stack; golang:1.25 container for tests):
+- `go build ./...` + `go vet ./...` clean; **full `go test ./...` passes** (every crawler package ok).
+- **Live integration** (`-tags integration` against the running Postgres, DSN from `.env`):
+  `TestRecrawlRequeue` — add two URLs → claim → `MarkFetched` (stamps `last_fetched_at`) → backdate
+  one an hour → `RequeueForRecrawl(30m)` re-enqueues **exactly the stale one** (PENDING, attempts=0),
+  leaving the fresh one FETCHED; a second immediate pass re-enqueues 0. **PASS.**
+- **Live boot**: rebuilt crawler came up healthy; Postgres confirms the `last_fetched_at` column
+  exists (the boot `EnsureRecrawlColumns` ran), and `/healthz` = ok.
+
+---
+
 ## 2026-08-19 — Phase 4: live end-to-end verification (discovery + text extraction)
 
 **What** — Brought the stack up (`postgres` + `redis` + `nats` + `minio` base infra, then a freshly

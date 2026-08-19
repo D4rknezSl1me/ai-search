@@ -120,7 +120,9 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
 
 **Goal:** harden, deepen, and refine over collected data.
 
-- Recrawl/freshness scheduling; incremental/conditional GET; change detection.
+- [~] Recrawl/freshness scheduling ✅ (`store.RequeueForRecrawl` + `main.runRecrawler`, gated by
+  `CRAWLER_RECRAWL_AFTER_S`: re-enqueue `FETCHED` URLs older than the horizon). Incremental/
+  conditional GET (ETag/If-Modified-Since to skip unchanged) + change detection still to come.
 - [x] **Sitemap-based seed discovery** (`crawler/internal/sitemap` + `POST /internal/sitemap/ingest`):
   parse `sitemap.xml` / sitemap-index (gzip-aware), follow one index level with URL/sitemap caps,
   and bulk-enqueue the listed URLs into a campaign's frontier — breadth beyond link-following
