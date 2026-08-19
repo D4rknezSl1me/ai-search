@@ -39,6 +39,8 @@ OPENSEARCH_MAPPING = {
                 "fields": {"shingles": {"type": "text", "analyzer": "shingle_analyzer"}},
             },
             "heading_path": {"type": "text"},
+            # Extracted topic tags (crawler RAKE) — searchable for recall + faceting.
+            "keyphrases": {"type": "text", "fields": {"raw": {"type": "keyword"}}},
             "lang": {"type": "keyword"},
             "source_type": {"type": "keyword"},
             "authority": {"type": "float"},

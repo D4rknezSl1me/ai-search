@@ -40,6 +40,36 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-20 — Phase 4: keyphrases wired into search (index + boost)
+
+**What**
+- Completed the enrichment feature end-to-end: the RAKE keyphrases the crawler stamps into
+  `documents.meta.keyphrases` are now **indexed and searched**.
+  - `indexes.py` — OpenSearch mapping gains a `keyphrases` text field (+ a `.raw` keyword sub-field
+    for future faceting).
+  - `indexer.py` — `_UNINDEXED_SQL` selects `meta->'keyphrases'`; a new `_keyphrases` helper
+    normalizes the jsonb (asyncpg hands it back as text) into a `list[str]`; every chunk's payload
+    carries the document's keyphrases.
+  - `retrieval.py` — lexical `multi_match` now includes `keyphrases^2`, so a query term present in a
+    document's topic tags contributes to (and boosts) its lexical score.
+
+**Why**
+- Phase 4 enrichment is only useful if the tags reach retrieval. Keyphrases give BM25 extra
+  high-signal terms — a query can match a document via its distilled topics even when the exact
+  wording differs from the body (recall-first). The `.raw` keyword sub-field sets up topic faceting
+  for the future UI.
+
+**Verification**
+- **Offline**: full `ai/tests` suite **87 pass** (4 new `test_indexer.py` — `_keyphrases` from a
+  json string / list / None / junk / non-string coercion).
+- **Live** (ai-api rebuilt; OpenSearch): added the `keyphrases` field to the index, indexed a chunk
+  whose distinctive term **"zebra quantum widget" appears only in its keyphrases** (body is about
+  photosynthesis). `POST /v1/retrieve {"query":"zebra quantum widget"}` returned that chunk as the
+  **top result** — proving keyphrases are indexed and matched by retrieval (without the
+  `keyphrases^2` field it could not have matched at all).
+
+---
+
 ## 2026-08-20 — Phase 4: live verification of the intelligence-plane retrieval pipeline
 
 **What** — Brought up the search plane **without the GPU stack** (base `qdrant` + `opensearch`, then

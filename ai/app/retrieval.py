@@ -150,7 +150,7 @@ async def lexical_search(query: str, f: Filters, k: int) -> list[dict]:
                 "must": [{
                     "multi_match": {
                         "query": query,
-                        "fields": ["text", "text.shingles", "title^2"],
+                        "fields": ["text", "text.shingles", "title^2", "keyphrases^2"],
                         "type": "best_fields",
                     }
                 }],

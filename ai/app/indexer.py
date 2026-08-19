@@ -29,10 +29,23 @@ def _point_id(chunk_id: str) -> str:
     return str(uuid.uuid5(_CHUNK_NS, chunk_id))
 
 
+def _keyphrases(raw) -> list[str]:
+    """Normalize the `meta->'keyphrases'` jsonb (asyncpg returns it as text)."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return []
+    return [str(x) for x in raw] if isinstance(raw, list) else []
+
+
 _UNINDEXED_SQL = """
     SELECT d.id,
            encode(d.content_hash, 'hex') AS chash,
            d.url, d.title, d.lang, d.published_at, d.fetched_at,
+           d.meta -> 'keyphrases' AS keyphrases,
            s.host AS domain, s.type AS source_type,
            COALESCE(s.authority, 0.5) AS authority
     FROM documents d
@@ -68,6 +81,7 @@ async def _index_one(pool, row) -> int:
         "authority": float(row["authority"]),
         "published_at": published,
         "fetched_at": fetched,
+        "keyphrases": _keyphrases(row["keyphrases"]),
     }
 
     q_points = []
