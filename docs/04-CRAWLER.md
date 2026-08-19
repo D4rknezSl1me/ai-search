@@ -122,7 +122,9 @@ All discovery uses **free/open** sources only (no paid search APIs — see `CLAU
   caps) behind `POST /internal/sitemap/ingest {campaign_id, url}`, which bulk-enqueues the listed
   URLs into the campaign frontier via the same canonicalize→`AddURL` path as seeds.
 - Outlinks from crawled pages (recursive, scope-bounded) — the primary breadth engine.
-- RSS/Atom feeds for freshness.
+- RSS/Atom feeds for freshness. **Implemented:** `crawler/internal/feeds` (RSS 2.0 / Atom /
+  RSS 1.0-RDF, gzip-aware, Atom alternate-link preference) behind `POST /internal/feeds/ingest
+  {campaign_id, url}`, which enqueues item URLs into the campaign frontier.
 - **Common Crawl URL indexes** (free) for massive cold-start breadth — a free substitute for
   commercial search APIs to widen the mouth of the funnel.
 - Public/free URL datasets, open directories, and web archives.

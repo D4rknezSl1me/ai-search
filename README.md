@@ -71,9 +71,11 @@ curl -X POST localhost:8090/internal/campaigns -H 'Content-Type: application/jso
        "max_depth":2,"max_pages":30,"allow_external":false,"min_delay_ms":300}'
 
 curl "localhost:8090/internal/frontier?campaign=1"   # crawl progress by state
-# Bulk-discover seeds from a sitemap into a campaign's frontier (Phase 4):
+# Bulk-discover seeds from a sitemap or RSS/Atom feed into a campaign (Phase 4):
 curl -X POST localhost:8090/internal/sitemap/ingest \
   -d '{"campaign_id":1,"url":"https://quotes.toscrape.com/sitemap.xml"}'
+curl -X POST localhost:8090/internal/feeds/ingest \
+  -d '{"campaign_id":1,"url":"https://example.com/feed.xml"}'
 curl localhost:8090/internal/coverage                # total documents indexed
 curl localhost:8090/internal/documents/1             # a document's metadata
 curl "localhost:8090/internal/render/queue"          # browser render queue by state (Phase 3)

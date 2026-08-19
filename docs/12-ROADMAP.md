@@ -125,6 +125,10 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   parse `sitemap.xml` / sitemap-index (gzip-aware), follow one index level with URL/sitemap caps,
   and bulk-enqueue the listed URLs into a campaign's frontier — breadth beyond link-following
   (recall-first). Free/open source, no paid dependency.
+- [x] **RSS/Atom feed seed discovery** (`crawler/internal/feeds` + `POST /internal/feeds/ingest`):
+  parse RSS 2.0 / Atom / RSS 1.0-RDF (gzip-aware, Atom alternate-link preference) and enqueue item
+  URLs into a campaign frontier — breadth + freshness, free/open. One-shot; recurring poll is a
+  follow-up.
 - Enrichment: NER, keyphrases, topic tags; media OCR/ASR (optional).
 - [x] **Query understanding — LLM expansion/decomposition** (`ai/app/understand.py`): the local
   LLM rewrites each query into paraphrases + decomposed sub-questions; every planned query is

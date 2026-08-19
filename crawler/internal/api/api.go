@@ -15,6 +15,7 @@ import (
 
 	"github.com/ai-search/crawler/internal/blob"
 	"github.com/ai-search/crawler/internal/crawl"
+	"github.com/ai-search/crawler/internal/feeds"
 	"github.com/ai-search/crawler/internal/fetch"
 	"github.com/ai-search/crawler/internal/metrics"
 	"github.com/ai-search/crawler/internal/sitemap"
@@ -68,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/internal/render/complete", s.renderComplete) // POST {"id":ID,"ok":bool}
 	mux.HandleFunc("/internal/render/ingest", s.renderIngest)     // POST {"id":ID,"url":...,"html":...}
 	mux.HandleFunc("/internal/sitemap/ingest", s.sitemapIngest)   // POST {"campaign_id":ID,"url":...}
+	mux.HandleFunc("/internal/feeds/ingest", s.feedsIngest)       // POST {"campaign_id":ID,"url":...}
 	return mux
 }
 
@@ -209,24 +211,77 @@ func (s *Server) sitemapIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fetchFn := func(ctx context.Context, u string) ([]byte, error) {
-		res, err := s.fetcher.Get(ctx, u)
-		if err != nil {
-			return nil, err
-		}
-		if res.Status < 200 || res.Status >= 300 {
-			return nil, fmt.Errorf("sitemap fetch %s: status %d", u, res.Status)
-		}
-		return res.Body, nil
-	}
-
-	urls, err := sitemap.Discover(ctx, req.URL, fetchFn, sitemap.Limits{MaxURLs: req.MaxURLs})
+	urls, err := sitemap.Discover(ctx, req.URL, s.fetchBytes, sitemap.Limits{MaxURLs: req.MaxURLs})
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
 	enqueued := s.enqueueURLs(ctx, req.CampaignID, urls)
 	metrics.SitemapURLs.Add(float64(enqueued))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"campaign_id": req.CampaignID,
+		"discovered":  len(urls),
+		"enqueued":    enqueued,
+	})
+}
+
+// fetchBytes GETs a control-plane URL (sitemap/feed) and returns its body,
+// erroring on any non-2xx status.
+func (s *Server) fetchBytes(ctx context.Context, u string) ([]byte, error) {
+	res, err := s.fetcher.Get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	if res.Status < 200 || res.Status >= 300 {
+		return nil, fmt.Errorf("fetch %s: status %d", u, res.Status)
+	}
+	return res.Body, nil
+}
+
+type feedsIngestReq struct {
+	CampaignID int64  `json:"campaign_id"`
+	URL        string `json:"url"`
+	MaxURLs    int    `json:"max_urls"`
+}
+
+// feedsIngest fetches an RSS/Atom feed and enqueues its item URLs into the
+// given campaign's frontier — breadth + freshness discovery (recall-first).
+func (s *Server) feedsIngest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST only"})
+		return
+	}
+	var req feedsIngestReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	req.URL = strings.TrimSpace(req.URL)
+	if req.CampaignID == 0 || req.URL == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "campaign_id and url are required"})
+		return
+	}
+	ctx := r.Context()
+	if _, err := s.store.GetCampaign(ctx, req.CampaignID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown campaign"})
+		return
+	}
+
+	data, err := s.fetchBytes(ctx, req.URL)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	urls, err := feeds.Parse(data)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.MaxURLs > 0 && len(urls) > req.MaxURLs {
+		urls = urls[:req.MaxURLs]
+	}
+	enqueued := s.enqueueURLs(ctx, req.CampaignID, urls)
+	metrics.FeedURLs.Add(float64(enqueued))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"campaign_id": req.CampaignID,
 		"discovered":  len(urls),

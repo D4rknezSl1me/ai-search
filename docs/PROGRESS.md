@@ -30,6 +30,40 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: RSS/Atom feed seed discovery (breadth + freshness)
+
+**What**
+- New `crawler/internal/feeds` package — discovers seed URLs from **RSS 2.0, Atom, and RSS 1.0/RDF**
+  feeds (docs/04 §7), a free/open breadth-and-freshness source most sites publish. `Parse(data)`
+  decodes all three shapes with one `encoding/xml` struct (matching `channel>item`, `feed>entry`,
+  and top-level RDF `<item>` by local-name, namespace-agnostic), is gzip-aware, and returns
+  de-duplicated item URLs in document order. A single `link` struct captures both an RSS
+  `<link>URL</link>` (char-data) and an Atom `<link href=… rel=… type=…/>` (attributes); `bestLink`
+  prefers the Atom `alternate`/HTML link, falls back to the first href, else the RSS link text.
+- Control endpoint `POST /internal/feeds/ingest {campaign_id, url, max_urls?}` — validates the
+  campaign (404 otherwise), fetches (200-only via the shared `fetchBytes` helper), parses, caps to
+  `max_urls`, and enqueues via the same `enqueueURLs` path as sitemaps/seeds. Counter
+  `crawler_feed_urls_total`. Refactored the sitemap handler's inline fetch into the shared
+  `fetchBytes` method (used by both discovery endpoints).
+
+**Why**
+- Same north-star rationale as sitemaps (breadth = recall) with a freshness angle: a feed lists a
+  site's newest items directly, so ingesting it captures new content quickly without waiting for
+  link-following. Free/open, no paid dependency (rule 2). One-shot ingest for now; a recurring feed
+  poll (like the social freshness scheduler) is a natural follow-up.
+
+**Verification** (golang:1.25-alpine container; `go mod tidy` at build; minimal `go.mod`/no `go.sum`
+restored after):
+- `go build ./...` clean; `go vet ./...` clean.
+- `go test ./internal/feeds/... ./internal/api/... ./internal/sitemap/...` → all **ok**. New
+  `feeds_test.go` (8): RSS 2.0 with cross-item dedupe, Atom preferring the alternate/HTML link over
+  self, RSS 1.0/RDF top-level items, gzip round-trip, malformed-XML error, empty feed → no URLs,
+  and `bestLink` fallback to a non-alternate href. Existing `api`/`sitemap` tests still pass.
+- **Deferred:** live endpoint call against a running crawler+Postgres; parse logic fully unit-covered
+  and the enqueue path is the proven shared helper.
+
+---
+
 ## 2026-08-19 — Phase 4: sitemap-based seed discovery (bulk breadth)
 
 **What**
