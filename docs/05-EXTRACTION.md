@@ -15,6 +15,8 @@ raw bytes ─▶ decode ─▶ format router ─▶ main-content extract ─▶ 
 - Detect charset (headers → meta → chardet fallback), decode to UTF-8.
 - Route by MIME/content sniff:
   - `text/html` → HTML extractor
+  - `text/*` (non-HTML: plain, markdown, csv, logs) → **implemented:** `extract.FromPlainText`
+    (body is the content; first line as title; no readability/link discovery)
   - `application/pdf` → PDF extractor (pdfplumber/Tika)
   - `application/*word*/*` → doc extractors
   - `application/json`, feeds → structured handlers

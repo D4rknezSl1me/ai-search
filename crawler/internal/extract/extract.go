@@ -51,6 +51,34 @@ func FromHTML(finalURL string, raw []byte) (*Document, error) {
 	return doc, nil
 }
 
+// FromPlainText builds a Document from a non-HTML textual body (text/plain,
+// markdown, csv, …). There is no readability step — the body is the content —
+// so recall-first, such pages now reach the index instead of being dropped. The
+// title is the first non-blank line; there is no link discovery.
+func FromPlainText(finalURL string, raw []byte) (*Document, error) {
+	text := strings.TrimSpace(string(raw))
+	return buildDoc(firstLine(text), "", text, nil, truncateRunes(text, 280), "", finalURL, raw), nil
+}
+
+// firstLine returns the first non-blank line, capped, as a title.
+func firstLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			return truncateRunes(t, 200)
+		}
+	}
+	return ""
+}
+
+// truncateRunes caps a string at n runes (never splitting a UTF-8 sequence).
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
+}
+
 func buildDoc(title, author, text string, published *time.Time, excerpt, site, finalURL string, raw []byte) *Document {
 	text = strings.TrimSpace(text)
 	sum := sha256.Sum256([]byte(text))

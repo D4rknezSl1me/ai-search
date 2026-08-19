@@ -79,3 +79,12 @@ func IsHTML(contentType string) bool {
 	ct := strings.ToLower(contentType)
 	return strings.Contains(ct, "text/html") || strings.Contains(ct, "application/xhtml")
 }
+
+// IsText reports whether a Content-Type denotes plain textual content that can
+// be indexed directly (the body IS the content) — text/plain, markdown, csv,
+// logs, etc. HTML is excluded (it has its own extractor). Recall-first: these
+// were previously dropped as "non-HTML".
+func IsText(contentType string) bool {
+	ct := strings.ToLower(contentType)
+	return strings.HasPrefix(ct, "text/") && !strings.Contains(ct, "html")
+}

@@ -133,6 +133,9 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   `POST /internal/commoncrawl/ingest`): resolve the latest crawls from `collinfo.json`, query the
   free CDX index per domain (`url=domain/*`), dedupe across crawls, and bulk-enqueue — the biggest
   cold-start breadth source, a free substitute for commercial search APIs (no paid dependency).
+- [x] **Plain-text (`text/*`) extraction** (`fetch.IsText` + `extract.FromPlainText`, shared
+  `Scheduler.index`): non-HTML text (plain, markdown, csv, logs) now indexes instead of being
+  dropped — a free recall win (no new dependency). PDF/doc binary parsing still open.
 - Enrichment: NER, keyphrases, topic tags; media OCR/ASR (optional).
 - [x] **Query understanding — LLM expansion/decomposition** (`ai/app/understand.py`): the local
   LLM rewrites each query into paraphrases + decomposed sub-questions; every planned query is

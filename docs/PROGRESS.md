@@ -5,6 +5,9 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ## Backlog (deferred follow-ups)
 
+- [x] **Plain-text (non-HTML) extraction** — done (2026-08-19). `text/*` bodies (plain, markdown,
+  csv, logs) now index instead of being dropped; see entry below. PDF/doc binary parsing still open.
+
 - [x] **FETCHING reaper** — done (2026-07-09). `frontier_urls.claimed_at` + goroutine ticker
   (`CRAWLER_REAP_AFTER_S`, default 300s) requeues stuck URLs under the retry cap.
 - [x] **Unit tests** — done (2026-07-09). `urlx` and `simhash` tests, run via `go test` in a
@@ -27,6 +30,43 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   loop — a long-lived Chromium claims jobs, renders JS-heavy pages, and POSTs the resolved DOM back
   for indexing. Verified live (rendered a real Wikipedia SPA → indexed). Lightweight anti-detection
   is in place; the full fingerprint/proxy stack remains a later Phase 3 refinement.
+
+---
+
+## 2026-08-19 — Phase 4: plain-text (non-HTML) extraction — stop dropping text/* content
+
+**What**
+- The crawler previously **dropped every non-HTML response** (`scheduler.go`: `IsHTML` gate →
+  marked visited, never extracted/indexed), so `text/plain`, markdown, csv, logs, etc. never reached
+  the index — a straight recall loss. Now `text/*` (excluding HTML) is extracted and indexed:
+  - `fetch.IsText(contentType)` — true for `text/*` except HTML.
+  - `extract.FromPlainText(url, raw)` — the body *is* the content, so no readability step: title =
+    first non-blank line, no link discovery, rune-safe title/excerpt truncation (`truncateRunes`
+    never splits a UTF-8 sequence). Reuses `buildDoc`, so content hash / language detect / simhash /
+    dedup are identical to the HTML path.
+  - Scheduler: factored the persist logic (raw+text blobs → `InsertDocument`) into a shared
+    `Scheduler.index(...)` helper used by both paths. HTML keeps its escalation gate + link
+    discovery; the text path skips both. Non-`text/*` (binary) still recorded as visited only.
+    New `crawler_fetch_total{result="text"}` label.
+
+**Why**
+- Maximum recall is the north star (CLAUDE.md): a large amount of the open web — READMEs, docs,
+  data files, mailing-list archives, `robots`/`ads.txt`, plaintext articles — is served as `text/*`.
+  Indexing it is free (no new dependency; the bytes are already the text) and closes a real gap. The
+  shared `index` helper also removes the duplicated persist code the two paths would otherwise carry.
+  (PDF/doc binary parsing remains a separate, dependency-bearing follow-up.)
+
+**Verification** (golang:1.25-alpine container; `go mod tidy` at build; minimal `go.mod`/no `go.sum`
+restored after):
+- `go build ./...` clean; `go vet ./...` clean; full `go test ./...` passes.
+- New `fetch_test.go` — `IsText`/`IsHTML` across text/plain (+charset, +case), markdown, csv vs
+  html/json/pdf/image/empty. New `extract_test.go` — `FromPlainText` (title = first line, body text,
+  32-byte hash, simhash, `en` language detect, no links, excerpt), empty body, **UTF-8-safe rune
+  truncation** (300×`é` → 200 runes, no split), and `firstLine` skipping blanks. Existing crawler
+  packages still build/test clean.
+- **Deferred:** live crawl of a `text/plain` URL against the running stack (Docker infra not up this
+  iteration); the extraction is unit-covered and the persist path is the shared, proven `index`
+  helper (same code the HTML path now uses).
 
 ---
 

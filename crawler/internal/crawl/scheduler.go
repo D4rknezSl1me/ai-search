@@ -135,65 +135,85 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 		return
 	}
 
-	if !fetch.IsHTML(res.ContentType) {
+	isHTML := fetch.IsHTML(res.ContentType)
+	isText := !isHTML && fetch.IsText(res.ContentType)
+	if !isHTML && !isText {
 		metrics.FetchTotal.WithLabelValues("non_html").Inc()
-		_ = s.store.MarkFetched(ctx, item.ID) // recorded as visited; parsing added later
-		return
-	}
-	metrics.FetchTotal.WithLabelValues("ok").Inc()
-
-	doc, err := extract.FromHTML(res.FinalURL, res.Body)
-	if err != nil {
-		s.retryOrFail(ctx, item, "extract error")
+		_ = s.store.MarkFetched(ctx, item.ID) // visited; binary parsing (PDF/doc) added later
 		return
 	}
 
-	// Store raw content (gzip) keyed by content hash.
+	var doc *extract.Document
+	extraMeta := map[string]any{}
+
+	if isHTML {
+		metrics.FetchTotal.WithLabelValues("ok").Inc()
+		doc, err = extract.FromHTML(res.FinalURL, res.Body)
+		if err != nil {
+			s.retryOrFail(ctx, item, "extract error")
+			return
+		}
+		// Escalation gate: decide whether this page's real content is locked
+		// behind JavaScript and should be re-fetched by the browser worker.
+		decision := render.NeedsRender(render.ParseMode(cfg.RenderJS), res.Body, doc.Text, len(doc.Links))
+		if decision.Needs {
+			for _, r := range decision.Reasons {
+				metrics.RenderEscalations.WithLabelValues(r).Inc()
+			}
+			// Durable hand-off: enqueue the URL for the browser-worker pool.
+			// Shallower pages render first (same priority shape as discovery).
+			renderPriority := 1.0 / float64(item.Depth+1)
+			if added, err := s.store.EnqueueRender(ctx, item.CampaignID, item.URL,
+				urlx.Hash(item.URL), item.Host, renderPriority, decision.Reasons); err != nil {
+				log.Printf("render enqueue error: %v", err)
+			} else if added {
+				metrics.RenderQueueEnqueued.Inc()
+			}
+			extraMeta["needs_render"] = true
+			extraMeta["render_reasons"] = decision.Reasons
+		}
+	} else {
+		// Plain-text (non-HTML) content: the body IS the text, so text/plain,
+		// markdown, csv, logs, etc. reach the index instead of being dropped
+		// (recall-first). No link discovery or render escalation applies.
+		metrics.FetchTotal.WithLabelValues("text").Inc()
+		doc, err = extract.FromPlainText(res.FinalURL, res.Body)
+		if err != nil {
+			s.retryOrFail(ctx, item, "extract error")
+			return
+		}
+	}
+
+	s.index(ctx, item, res, doc, extraMeta)
+	if isHTML {
+		s.discover(ctx, item, cfg, doc.Links)
+	}
+	_ = s.store.MarkFetched(ctx, item.ID)
+}
+
+// index persists a fetched document — raw + clean-text blobs (idempotent, keyed
+// by content hash, so re-crawls backfill text for known rows), then the row.
+// Shared by the HTML and plain-text paths.
+func (s *Scheduler) index(ctx context.Context, item store.FrontierItem, res *fetch.Result, doc *extract.Document, extraMeta map[string]any) {
 	blobKey, err := s.blob.PutRaw(ctx, doc.ContentHash, res.Body)
 	if err != nil {
 		log.Printf("blob put error: %v", err)
 	}
-
-	// Persist the clean extracted text (idempotent, keyed by content hash) so
-	// the intelligence plane can chunk/embed it. Written for every extracted
-	// document — including re-crawls of already-known content — and NOT gated by
-	// the insert-dedup below, so text is available even for pre-existing rows.
 	if doc.Text != "" {
 		if _, err := s.blob.PutText(ctx, doc.ContentHash, doc.Text); err != nil {
 			log.Printf("blob put text error: %v", err)
 		}
 	}
 
-	// Escalation gate: decide whether this page's real content is locked behind
-	// JavaScript and should be re-fetched by the browser worker. Recorded in
-	// metrics + document meta now; the Playwright pool consumes it next.
-	decision := render.NeedsRender(render.ParseMode(cfg.RenderJS), res.Body, doc.Text, len(doc.Links))
-	if decision.Needs {
-		for _, r := range decision.Reasons {
-			metrics.RenderEscalations.WithLabelValues(r).Inc()
-		}
-		// Durable hand-off: enqueue the URL for the browser-worker pool. Shallower
-		// pages render first (same priority shape as frontier discovery).
-		renderPriority := 1.0 / float64(item.Depth+1)
-		if added, err := s.store.EnqueueRender(ctx, item.CampaignID, item.URL,
-			urlx.Hash(item.URL), item.Host, renderPriority, decision.Reasons); err != nil {
-			log.Printf("render enqueue error: %v", err)
-		} else if added {
-			metrics.RenderQueueEnqueued.Inc()
-		}
-	}
-
 	sourceID, _ := s.store.EnsureSource(ctx, item.Host)
-
 	meta := map[string]any{
 		"excerpt":   doc.Excerpt,
 		"site_name": doc.SiteName,
 		"text_len":  len(doc.Text),
 		"truncated": res.Truncated,
 	}
-	if decision.Needs {
-		meta["needs_render"] = true
-		meta["render_reasons"] = decision.Reasons
+	for k, v := range extraMeta {
+		meta[k] = v
 	}
 
 	_, inserted, err := s.store.InsertDocument(ctx, &store.Document{
@@ -218,9 +238,6 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 	} else {
 		metrics.DocsDuplicate.Inc()
 	}
-
-	s.discover(ctx, item, cfg, doc.Links)
-	_ = s.store.MarkFetched(ctx, item.ID)
 }
 
 // discover enqueues in-scope outlinks at depth+1.
