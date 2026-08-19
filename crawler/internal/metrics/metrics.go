@@ -103,6 +103,11 @@ var (
 		Name: "crawler_recrawl_requeued_total",
 		Help: "FETCHED URLs re-enqueued for recrawl because they were stale.",
 	})
+
+	ConditionalNotModified = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "crawler_conditional_not_modified_total",
+		Help: "Recrawl conditional GETs answered 304 Not Modified (re-processing skipped).",
+	})
 )
 
 // StatusClass maps an HTTP status code to a coarse class label.

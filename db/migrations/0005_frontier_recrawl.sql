@@ -7,3 +7,7 @@ ALTER TABLE frontier_urls ADD COLUMN IF NOT EXISTS last_fetched_at timestamptz;
 CREATE INDEX IF NOT EXISTS idx_frontier_recrawl
     ON frontier_urls (last_fetched_at)
     WHERE state = 'FETCHED';
+
+-- HTTP validators for conditional GET on recrawl (skip unchanged pages).
+ALTER TABLE frontier_urls ADD COLUMN IF NOT EXISTS etag text;
+ALTER TABLE frontier_urls ADD COLUMN IF NOT EXISTS last_modified text;

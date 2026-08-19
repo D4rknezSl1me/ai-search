@@ -118,7 +118,7 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 	}
 
 	start := time.Now()
-	res, err := s.fetcher.Get(ctx, item.URL)
+	res, err := s.fetcher.GetConditional(ctx, item.URL, item.ETag, item.LastModified)
 	metrics.FetchDuration.Observe(time.Since(start).Seconds())
 	if err != nil {
 		metrics.FetchTotal.WithLabelValues("error").Inc()
@@ -126,6 +126,15 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 		return
 	}
 	metrics.FetchStatus.WithLabelValues(metrics.StatusClass(res.Status)).Inc()
+
+	// Conditional GET: an unchanged page (304) needs no re-extraction/indexing.
+	// Just refresh its fetch time so the recrawl horizon restarts.
+	if res.NotModified {
+		metrics.FetchTotal.WithLabelValues("not_modified").Inc()
+		metrics.ConditionalNotModified.Inc()
+		_ = s.store.MarkFetched(ctx, item.ID)
+		return
+	}
 
 	// Non-2xx handling: retry 5xx, fail 4xx.
 	if res.Status >= 400 {
@@ -185,6 +194,8 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 	}
 
 	s.index(ctx, item, res, doc, extraMeta)
+	// Persist HTTP validators so the next recrawl can issue a conditional GET.
+	_ = s.store.SetValidators(ctx, item.ID, res.ETag, res.LastModified)
 	if isHTML {
 		s.discover(ctx, item, cfg, doc.Links)
 	}

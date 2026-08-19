@@ -16,11 +16,14 @@ type Fetcher struct {
 }
 
 type Result struct {
-	FinalURL    string
-	Status      int
-	ContentType string
-	Body        []byte
-	Truncated   bool
+	FinalURL     string
+	Status       int
+	ContentType  string
+	Body         []byte
+	Truncated    bool
+	NotModified  bool   // server returned 304 (conditional GET); Body is empty
+	ETag         string // response ETag, if any (store for the next conditional GET)
+	LastModified string // response Last-Modified, if any
 }
 
 func New(timeout time.Duration, maxBodyBytes int64, userAgent string) *Fetcher {
@@ -41,6 +44,14 @@ func New(timeout time.Duration, maxBodyBytes int64, userAgent string) *Fetcher {
 
 // Get fetches a URL, capping the body at maxBodyBytes.
 func (f *Fetcher) Get(ctx context.Context, rawURL string) (*Result, error) {
+	return f.GetConditional(ctx, rawURL, "", "")
+}
+
+// GetConditional fetches a URL, sending If-None-Match / If-Modified-Since when
+// prior validators are supplied. A 304 response returns a Result with
+// NotModified=true and no body, so the caller can skip re-processing an
+// unchanged page (recrawl efficiency).
+func (f *Fetcher) GetConditional(ctx context.Context, rawURL, etag, lastModified string) (*Result, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -48,12 +59,30 @@ func (f *Fetcher) Get(ctx context.Context, rawURL string) (*Result, error) {
 	req.Header.Set("User-Agent", f.userAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en;q=0.9,*;q=0.5")
+	if etag != "" {
+		req.Header.Set("If-None-Match", etag)
+	}
+	if lastModified != "" {
+		req.Header.Set("If-Modified-Since", lastModified)
+	}
 
 	resp, err := f.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	res := &Result{
+		FinalURL:     resp.Request.URL.String(),
+		Status:       resp.StatusCode,
+		ContentType:  resp.Header.Get("Content-Type"),
+		ETag:         resp.Header.Get("ETag"),
+		LastModified: resp.Header.Get("Last-Modified"),
+	}
+	if resp.StatusCode == http.StatusNotModified {
+		res.NotModified = true
+		return res, nil // 304 has no body
+	}
 
 	limited := io.LimitReader(resp.Body, f.maxBodyBytes+1)
 	body, err := io.ReadAll(limited)
@@ -64,14 +93,9 @@ func (f *Fetcher) Get(ctx context.Context, rawURL string) (*Result, error) {
 	if truncated {
 		body = body[:f.maxBodyBytes]
 	}
-
-	return &Result{
-		FinalURL:    resp.Request.URL.String(),
-		Status:      resp.StatusCode,
-		ContentType: resp.Header.Get("Content-Type"),
-		Body:        body,
-		Truncated:   truncated,
-	}, nil
+	res.Body = body
+	res.Truncated = truncated
+	return res, nil
 }
 
 // IsHTML reports whether a Content-Type header denotes HTML.

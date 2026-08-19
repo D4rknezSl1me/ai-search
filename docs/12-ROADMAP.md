@@ -120,9 +120,11 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
 
 **Goal:** harden, deepen, and refine over collected data.
 
-- [~] Recrawl/freshness scheduling ✅ (`store.RequeueForRecrawl` + `main.runRecrawler`, gated by
-  `CRAWLER_RECRAWL_AFTER_S`: re-enqueue `FETCHED` URLs older than the horizon). Incremental/
-  conditional GET (ETag/If-Modified-Since to skip unchanged) + change detection still to come.
+- [x] Recrawl/freshness scheduling (`store.RequeueForRecrawl` + `main.runRecrawler`, gated by
+  `CRAWLER_RECRAWL_AFTER_S`: re-enqueue `FETCHED` URLs older than the horizon) **+ conditional GET**
+  (`fetch.GetConditional` sends ETag/If-Modified-Since; a 304 skips re-extraction/indexing and just
+  refreshes the fetch time; validators stored per frontier URL). Verified live (304 on example.com
+  recrawl). Deeper change detection (content diffing) can build on the stored validators.
 - [x] **Sitemap-based seed discovery** (`crawler/internal/sitemap` + `POST /internal/sitemap/ingest`):
   parse `sitemap.xml` / sitemap-index (gzip-aware), follow one index level with URL/sitemap caps,
   and bulk-enqueue the listed URLs into a campaign's frontier — breadth beyond link-following

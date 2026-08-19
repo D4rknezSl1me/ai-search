@@ -37,6 +37,43 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: conditional GET (ETag / If-Modified-Since) — cheap recrawls
+
+**What**
+- Made recrawl cheap: an unchanged page now costs one conditional round-trip and **no**
+  re-extraction/re-indexing. Builds directly on the recrawl scheduler.
+  - `frontier_urls.etag` / `last_modified` columns (migration `0005` + `EnsureRecrawlColumns`, both
+    extended). `store.ClaimNext` returns them on each `FrontierItem`; `store.SetValidators(id, etag,
+    last_modified)` records the response validators (`NULLIF ''` so blanks clear).
+  - `fetch.GetConditional(ctx, url, etag, lastModified)` sends `If-None-Match` / `If-Modified-Since`
+    and, on **304**, returns `Result{NotModified:true}` with no body; it also captures the response
+    `ETag`/`Last-Modified` on every fetch. `fetch.Get` is now a thin wrapper (no validators).
+  - Scheduler: fetches conditionally with the URL's stored validators; a `304` short-circuits to
+    `MarkFetched` (refresh `last_fetched_at`, skip extraction) and increments
+    `crawler_conditional_not_modified_total` + `fetch_total{result="not_modified"}`; a `2xx` stores
+    the new validators via `SetValidators` after indexing.
+
+**Why**
+- Recrawl (previous entry) keeps content fresh but would re-fetch+re-extract+re-embed every URL each
+  cycle — wasteful on the owner's single box and on target sites. Conditional GET means only genuinely
+  changed pages pay the full pipeline; unchanged ones are a tiny HEAD-like check. This is the
+  "incremental/conditional GET" half of the Phase 4 recrawl item; explicit content-change detection
+  (beyond validators) can build on the stored ETags later.
+
+**Verification** (crawler rebuilt into the running stack; golang:1.25 container for tests):
+- `go build ./...` + `go vet ./...` clean.
+- **Unit** (`fetch_test.go`, httptest): first GET → 200 with `ETag`/`Last-Modified` captured; a
+  conditional refetch with the ETag → `304`, `NotModified=true`, empty body. **PASS.**
+- **Live integration** (`-tags integration`, running Postgres): `TestRecrawlRequeue` still passes
+  with `ClaimNext` now selecting the validator columns.
+- **Live end-to-end**: seeded `example.com` (sends `Last-Modified`) → the frontier row stored the
+  validator (`last_modified` set) after the first fetch. Re-enqueued it (keeping the validator); the
+  scheduler's conditional re-fetch returned **304** → `crawler_conditional_not_modified_total` went
+  `0 → 1`, `fetch_total{result="not_modified"}=1`, and the row returned to `FETCHED` **without
+  re-indexing**.
+
+---
+
 ## 2026-08-19 — Phase 4: recrawl / freshness scheduling (re-fetch stale URLs)
 
 **What**

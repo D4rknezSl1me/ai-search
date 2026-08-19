@@ -100,11 +100,13 @@ func (s *Store) EnsureSource(ctx context.Context, host string) (int64, error) {
 // ----------------------------------------------------------------- frontier ---
 
 type FrontierItem struct {
-	ID         int64
-	URL        string
-	Host       string
-	Depth      int
-	CampaignID int64
+	ID           int64
+	URL          string
+	Host         string
+	Depth        int
+	CampaignID   int64
+	ETag         string // prior validator for conditional GET ("" if none)
+	LastModified string // prior Last-Modified for conditional GET ("" if none)
 }
 
 // AddURL inserts a frontier URL, ignoring duplicates (same url_hash+campaign).
@@ -134,7 +136,8 @@ func (s *Store) ClaimNext(ctx context.Context, n int) ([]FrontierItem, error) {
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING f.id, f.url, f.host, f.depth, f.campaign_id`, n)
+		RETURNING f.id, f.url, f.host, f.depth, f.campaign_id,
+		          COALESCE(f.etag, ''), COALESCE(f.last_modified, '')`, n)
 	if err != nil {
 		return nil, err
 	}
@@ -143,12 +146,23 @@ func (s *Store) ClaimNext(ctx context.Context, n int) ([]FrontierItem, error) {
 	var items []FrontierItem
 	for rows.Next() {
 		var it FrontierItem
-		if err := rows.Scan(&it.ID, &it.URL, &it.Host, &it.Depth, &it.CampaignID); err != nil {
+		if err := rows.Scan(&it.ID, &it.URL, &it.Host, &it.Depth, &it.CampaignID,
+			&it.ETag, &it.LastModified); err != nil {
 			return nil, err
 		}
 		items = append(items, it)
 	}
 	return items, rows.Err()
+}
+
+// SetValidators records the HTTP validators (ETag / Last-Modified) returned for a
+// URL, so a later recrawl can issue a conditional GET and skip re-processing an
+// unchanged page. Empty strings clear the stored value.
+func (s *Store) SetValidators(ctx context.Context, id int64, etag, lastModified string) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE frontier_urls SET etag = NULLIF($2, ''), last_modified = NULLIF($3, '') WHERE id = $1`,
+		id, etag, lastModified)
+	return err
 }
 
 func (s *Store) MarkFetched(ctx context.Context, id int64) error {
@@ -161,8 +175,10 @@ func (s *Store) MarkFetched(ctx context.Context, id int64) error {
 // feature works on volumes that predate the 0005 migration (initdb only applies
 // migrations on first init).
 func (s *Store) EnsureRecrawlColumns(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx,
-		`ALTER TABLE frontier_urls ADD COLUMN IF NOT EXISTS last_fetched_at timestamptz`)
+	_, err := s.pool.Exec(ctx, `
+		ALTER TABLE frontier_urls ADD COLUMN IF NOT EXISTS last_fetched_at timestamptz;
+		ALTER TABLE frontier_urls ADD COLUMN IF NOT EXISTS etag text;
+		ALTER TABLE frontier_urls ADD COLUMN IF NOT EXISTS last_modified text;`)
 	return err
 }
 
