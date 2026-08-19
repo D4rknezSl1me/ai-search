@@ -93,6 +93,11 @@ var (
 		Name: "crawler_feed_urls_total",
 		Help: "URLs newly enqueued into the frontier from RSS/Atom feed ingestion.",
 	})
+
+	CommonCrawlURLs = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "crawler_commoncrawl_urls_total",
+		Help: "URLs newly enqueued into the frontier from Common Crawl index ingestion.",
+	})
 )
 
 // StatusClass maps an HTTP status code to a coarse class label.

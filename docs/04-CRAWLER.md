@@ -126,7 +126,9 @@ All discovery uses **free/open** sources only (no paid search APIs — see `CLAU
   RSS 1.0-RDF, gzip-aware, Atom alternate-link preference) behind `POST /internal/feeds/ingest
   {campaign_id, url}`, which enqueues item URLs into the campaign frontier.
 - **Common Crawl URL indexes** (free) for massive cold-start breadth — a free substitute for
-  commercial search APIs to widen the mouth of the funnel.
+  commercial search APIs to widen the mouth of the funnel. **Implemented:**
+  `crawler/internal/commoncrawl` (resolve latest crawls from `collinfo.json`, query the CDX index
+  per domain, dedupe across crawls) behind `POST /internal/commoncrawl/ingest {campaign_id, domain}`.
 - Public/free URL datasets, open directories, and web archives.
 - Platform-specific discovery (hashtags, profiles, public search endpoints) for social — via
   free/open APIs or browser scraping, never paid data feeds.

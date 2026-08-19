@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/ai-search/crawler/internal/blob"
+	"github.com/ai-search/crawler/internal/commoncrawl"
 	"github.com/ai-search/crawler/internal/crawl"
 	"github.com/ai-search/crawler/internal/feeds"
 	"github.com/ai-search/crawler/internal/fetch"
@@ -70,6 +71,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/internal/render/ingest", s.renderIngest)     // POST {"id":ID,"url":...,"html":...}
 	mux.HandleFunc("/internal/sitemap/ingest", s.sitemapIngest)   // POST {"campaign_id":ID,"url":...}
 	mux.HandleFunc("/internal/feeds/ingest", s.feedsIngest)       // POST {"campaign_id":ID,"url":...}
+	mux.HandleFunc("/internal/commoncrawl/ingest", s.commonCrawlIngest) // POST {"campaign_id":ID,"domain":...}
 	return mux
 }
 
@@ -282,6 +284,54 @@ func (s *Server) feedsIngest(w http.ResponseWriter, r *http.Request) {
 	}
 	enqueued := s.enqueueURLs(ctx, req.CampaignID, urls)
 	metrics.FeedURLs.Add(float64(enqueued))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"campaign_id": req.CampaignID,
+		"discovered":  len(urls),
+		"enqueued":    enqueued,
+	})
+}
+
+type commonCrawlIngestReq struct {
+	CampaignID int64  `json:"campaign_id"`
+	Domain     string `json:"domain"`
+	MaxURLs    int    `json:"max_urls"`
+	MaxIndexes int    `json:"max_indexes"`
+}
+
+// commonCrawlIngest queries the free Common Crawl URL index for every page it
+// has captured under a domain and enqueues them — the biggest cold-start
+// breadth source (recall-first, no paid API).
+func (s *Server) commonCrawlIngest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST only"})
+		return
+	}
+	var req commonCrawlIngestReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	req.Domain = strings.TrimSpace(req.Domain)
+	if req.CampaignID == 0 || req.Domain == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "campaign_id and domain are required"})
+		return
+	}
+	ctx := r.Context()
+	if _, err := s.store.GetCampaign(ctx, req.CampaignID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown campaign"})
+		return
+	}
+
+	urls, err := commoncrawl.Discover(ctx, req.Domain, s.fetchBytes, commoncrawl.Opts{
+		MaxURLs:    req.MaxURLs,
+		MaxIndexes: req.MaxIndexes,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	enqueued := s.enqueueURLs(ctx, req.CampaignID, urls)
+	metrics.CommonCrawlURLs.Add(float64(enqueued))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"campaign_id": req.CampaignID,
 		"discovered":  len(urls),

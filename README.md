@@ -76,6 +76,9 @@ curl -X POST localhost:8090/internal/sitemap/ingest \
   -d '{"campaign_id":1,"url":"https://quotes.toscrape.com/sitemap.xml"}'
 curl -X POST localhost:8090/internal/feeds/ingest \
   -d '{"campaign_id":1,"url":"https://example.com/feed.xml"}'
+# Cold-start breadth from the free Common Crawl URL index (by domain):
+curl -X POST localhost:8090/internal/commoncrawl/ingest \
+  -d '{"campaign_id":1,"domain":"example.com","max_urls":500}'
 curl localhost:8090/internal/coverage                # total documents indexed
 curl localhost:8090/internal/documents/1             # a document's metadata
 curl "localhost:8090/internal/render/queue"          # browser render queue by state (Phase 3)

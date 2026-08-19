@@ -30,6 +30,45 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: Common Crawl URL-index seed discovery (massive cold-start breadth)
+
+**What**
+- New `crawler/internal/commoncrawl` package — discovers seed URLs from the **free Common Crawl URL
+  index** (docs/04 §7), the biggest cold-start breadth source on the open web and a zero-cost
+  substitute for commercial search APIs (CLAUDE.md rule 2). Given a domain, it queries the CC CDX
+  index for every page CC has captured under it. Pure/offline-testable pieces:
+  - `ParseCollinfo(data)` — extracts the CDX API endpoints (newest crawl first) from
+    `collinfo.json`.
+  - `ParseCDX(data)` — parses a CDX `output=json` response (newline-delimited JSON, one row per
+    capture) into page URLs; tolerant (skips blank/unparseable rows and non-http(s) URLs).
+  - `Discover(ctx, domain, fetch, opts)` — resolves the latest `MaxIndexes` crawls from collinfo
+    (or an explicit `IndexURL`), queries each with `url=<domain>/*&output=json&limit=<remaining>`,
+    de-dupes across crawls, and caps at `MaxURLs`. A failed index shard is skipped (best-effort,
+    recall-first); only a collinfo-resolution failure is fatal. `fetch` is injected, so the whole
+    flow is unit-tested with a fake router (no network).
+- Control endpoint `POST /internal/commoncrawl/ingest {campaign_id, domain, max_urls?, max_indexes?}`
+  — validates the campaign (404 otherwise), runs `Discover` with the shared `fetchBytes`, and
+  enqueues via the shared `enqueueURLs` path. Counter `crawler_commoncrawl_urls_total`.
+
+**Why**
+- Maximum recall is the north star, and Common Crawl is the highest-leverage way to widen the mouth
+  of the funnel: instead of waiting to discover a site link-by-link (or even from its sitemap), CC
+  already holds a large sample of its URLs, free. This is the docs/04 §7 "free substitute for
+  commercial search APIs" made real — bulk discovery input to the existing frontier.
+
+**Verification** (golang:1.25-alpine container; `go mod tidy` at build; minimal `go.mod`/no `go.sum`
+restored after):
+- `go build ./...` clean; `go vet ./...` clean.
+- `go test ./internal/commoncrawl/... ./internal/api/...` → both **ok**. New `commoncrawl_test.go`
+  (8): parse collinfo; CDX parse skipping junk + non-http; `Discover` resolves collinfo and queries
+  the newest crawl; **builds the correct `url=domain%2F%2A&output=json&limit=` query**; multi-index
+  cross-crawl dedupe + `MaxURLs` cap; explicit `IndexURL` skips collinfo; empty-domain error;
+  collinfo-fetch-error fatal. Existing `api` tests still pass.
+- **Deferred:** live call against the real CC index + running crawler+Postgres; parse/discovery
+  logic fully unit-covered, enqueue path is the proven shared helper.
+
+---
+
 ## 2026-08-19 — Phase 4: RSS/Atom feed seed discovery (breadth + freshness)
 
 **What**

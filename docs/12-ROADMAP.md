@@ -129,6 +129,10 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   parse RSS 2.0 / Atom / RSS 1.0-RDF (gzip-aware, Atom alternate-link preference) and enqueue item
   URLs into a campaign frontier — breadth + freshness, free/open. One-shot; recurring poll is a
   follow-up.
+- [x] **Common Crawl URL-index discovery** (`crawler/internal/commoncrawl` +
+  `POST /internal/commoncrawl/ingest`): resolve the latest crawls from `collinfo.json`, query the
+  free CDX index per domain (`url=domain/*`), dedupe across crawls, and bulk-enqueue — the biggest
+  cold-start breadth source, a free substitute for commercial search APIs (no paid dependency).
 - Enrichment: NER, keyphrases, topic tags; media OCR/ASR (optional).
 - [x] **Query understanding — LLM expansion/decomposition** (`ai/app/understand.py`): the local
   LLM rewrites each query into paraphrases + decomposed sub-questions; every planned query is
