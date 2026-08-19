@@ -57,3 +57,5 @@ class RetrieveResponse(BaseModel):
     reranked: bool
     degraded: dict
     expansions: list[str] = Field(default_factory=list)
+    intent: str = "factual"
+    freshness: str = "auto"

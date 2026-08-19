@@ -127,7 +127,13 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   retrieved (hybrid) and the runs are RRF-fused, so a chunk agreed on by several phrasings accrues
   score from each. Off-path and degrades to the original query when the LLM is down (recall-first,
   never fails a search). Wired through `/v1/retrieve` + `/v1/search` (`expand` flag, `expansions`
-  echoed). Remaining query-understanding work: intent classification.
+  echoed).
+- [x] **Query intent classification** (`ai/app/intent.py`): a rule-based classifier labels each
+  query (news_fresh / broad_research / entity_lookup / navigational / factual). Today a news/recency
+  intent upgrades `freshness="auto"` → `"fresh"` (an explicit user freshness always wins); the label
+  is echoed on responses for observability and future hooks (filter derivation, per-intent tuning).
+  Intent only nudges ranking — never filters or drops results (recall-first). **Query understanding
+  (docs/07 §2) is now complete: normalize + expansion + decomposition + intent.**
 - [x] **Freshness-aware ranking** (`ai/app/freshness.py`): the `freshness=auto|fresh|any` request
   option (previously accepted but inert) now blends a recency weight — halving every
   `FRESHNESS_HALF_LIFE_DAYS` — into the ordering after rerank. `auto` nudges, `fresh` pulls hard,

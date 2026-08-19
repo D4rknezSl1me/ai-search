@@ -13,8 +13,9 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   on sm_120 here (loads on CUDA, then stalls); running on **CPU** for now. The GPU image is
   built (`deploy/tei-blackwell`) and one `TEI_IMAGE` swap away once TEI ships stable Blackwell
   kernels. Also restore `bge-reranker-v2-m3` (multilingual) over MiniLM at that point.
-- [~] **Richer query understanding** — LLM-driven **expansion/decomposition done** (2026-08-19,
-  `ai/app/understand.py`; see entry below). Intent-based freshness boosting still open.
+- [x] **Richer query understanding** — done (2026-08-19). LLM expansion/decomposition
+  (`ai/app/understand.py`), freshness-aware ranking (`ai/app/freshness.py`), and rule-based intent
+  classification driving intent→freshness boosting (`ai/app/intent.py`). See entries below.
 - [ ] **Index reconciliation** — reconcile `documents.n_chunks` vs actual Qdrant/OpenSearch
   counts; prune stale chunks when a doc is re-chunked to fewer pieces.
 - [ ] **max_pages best-effort overshoot** — tighten the concurrent cap if it matters.
@@ -26,6 +27,39 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
   loop — a long-lived Chromium claims jobs, renders JS-heavy pages, and POSTs the resolved DOM back
   for indexing. Verified live (rendered a real Wikipedia SPA → indexed). Lightweight anti-detection
   is in place; the full fingerprint/proxy stack remains a later Phase 3 refinement.
+
+---
+
+## 2026-08-19 — Phase 4: query intent classification (intent → freshness)
+
+**What**
+- New `ai/app/intent.py` — a lightweight, rule-based (no model, no network) query classifier, the
+  last open piece of query understanding (docs/07 §2). `classify(query)` returns one of
+  `news_fresh | broad_research | entity_lookup | navigational | factual` from ordered regex/heuristic
+  signals (precedence: navigational URL/site → recency → breadth → named-entity → factual). Recency
+  covers explicit words ("latest", "breaking", "this week") *and* a current/next-year mention.
+- `resolve_freshness(requested, intent)` maps intent onto a freshness mode **only when the caller
+  left it "auto"**: a `news_fresh` query upgrades to `"fresh"`; an explicit `fresh`/`any` always wins.
+- Wired into `retrieval.retrieve()` as step 0: classify the query, resolve the effective freshness,
+  and feed that into the existing freshness blend. `RetrievalResult` now carries `intent` +
+  `freshness`; both are echoed on `/v1/retrieve` and in `/v1/search` payloads/SSE `meta` for
+  observability. Intent only nudges ranking — it never filters or drops candidates (recall-first).
+
+**Why**
+- Completes query understanding and makes recency automatic where it matters: "latest X" now gets
+  fresh ranking without the user setting `freshness=fresh`, while non-time-sensitive queries are
+  unaffected. Rule-based (not an LLM call) keeps it zero-latency and dependency-free on the hot path;
+  the extra labels are surfaced now for future hooks (filter derivation, per-intent k/rerank tuning).
+
+**Verification**
+- **Full offline suite: 68 tests pass** (`ai/tests/`, local `pytest`, no network). New
+  `test_intent.py` (17): news/recency phrasings + current/next-year → `news_fresh`; an old year does
+  not; navigational (site/URL/login), broad-research, entity-lookup ("Ada Lovelace", "who is …"),
+  factual default, empty→factual; precedence (navigational beats news, news beats broad); and
+  `resolve_freshness` (auto upgrades only for news; explicit `any`/`fresh` respected). Prior
+  understand/fusion/freshness/dedup tests (51) still green.
+- Import/route smoke: `app.main` builds; a `news_fresh` query resolves `auto`→`fresh` end to end.
+  Live vs a running stack deferred (pure classification + ordering logic, unit-covered).
 
 ---
 

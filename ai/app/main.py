@@ -147,6 +147,8 @@ async def v1_retrieve(req: RetrieveRequest) -> RetrieveResponse:
         reranked=result.reranked,
         degraded={"vector": not result.vector_ok},
         expansions=result.plan.expansions,
+        intent=result.intent,
+        freshness=result.freshness,
     )
 
 
@@ -197,6 +199,8 @@ def _retrieve_only_payload(req, result, start, llm_ready) -> dict:
         "confidence": 0.0,
         "coverage": {"candidates": result.n_candidates, "used": len(cands), "domains": _domains(cands)},
         "expansions": result.plan.expansions,
+        "intent": result.intent,
+        "freshness": result.freshness,
         "latency_ms": int((time.monotonic() - start) * 1000),
         "degraded": {"vector": not result.vector_ok, "reranker": not result.reranked, "llm": not llm_ready},
     }
@@ -218,6 +222,8 @@ async def _search_full(req, result, start) -> dict:
         "confidence": synthesis.confidence(cands, used, result.reranked),
         "coverage": {"candidates": result.n_candidates, "used": len(cands), "domains": _domains(cands)},
         "expansions": result.plan.expansions,
+        "intent": result.intent,
+        "freshness": result.freshness,
         "latency_ms": int((time.monotonic() - start) * 1000),
         "degraded": {"vector": not result.vector_ok, "reranker": not result.reranked, "llm": False},
     }
@@ -257,6 +263,8 @@ async def _search_sse(req, result, start):
         "confidence": synthesis.confidence(cands, used, result.reranked),
         "coverage": {"candidates": result.n_candidates, "used": len(cands), "domains": _domains(cands)},
         "expansions": result.plan.expansions,
+        "intent": result.intent,
+        "freshness": result.freshness,
         "latency_ms": int((time.monotonic() - start) * 1000),
         "degraded": {"vector": not result.vector_ok, "reranker": not result.reranked, "llm": False},
     })

@@ -18,6 +18,7 @@ from . import clients
 from .config import settings
 from .dedup import DedupIndex
 from .freshness import apply_freshness
+from .intent import classify, resolve_freshness
 from .understand import QueryPlan, plan_query
 
 log = logging.getLogger("retrieval")
@@ -313,6 +314,8 @@ class RetrievalResult:
     reranked: bool
     vector_ok: bool
     plan: QueryPlan
+    intent: str
+    freshness: str
 
 
 async def retrieve(
@@ -325,6 +328,11 @@ async def retrieve(
 ) -> RetrievalResult:
     max_sources = max_sources or settings.max_sources
     do_expand = settings.query_expansion if expand is None else expand
+
+    # 0. Intent: a news/recency query upgrades freshness="auto" → "fresh" (an
+    #    explicit user freshness always wins). Intent only nudges ranking.
+    intent = classify(query)
+    effective_freshness = resolve_freshness(freshness, intent)
 
     # 1. Understand: normalize + (optionally) expand into paraphrases/sub-queries.
     plan = await plan_query(
@@ -348,7 +356,7 @@ async def retrieve(
 
     # 4. Freshness: blend recency into the ordering (no-op for freshness="any").
     apply_freshness(
-        shortlist, freshness,
+        shortlist, effective_freshness,
         half_life_days=settings.freshness_half_life_days,
         undated_weight=settings.freshness_undated_weight,
         auto_weight=settings.freshness_auto_weight,
@@ -362,4 +370,6 @@ async def retrieve(
         reranked=reranked,
         vector_ok=any(vec for _, vec in runs),
         plan=plan,
+        intent=intent.value,
+        freshness=effective_freshness,
     )
