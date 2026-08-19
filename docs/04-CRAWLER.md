@@ -36,7 +36,9 @@ The frontier is the set of URLs to crawl, with ordering.
 
 - **Per-host concurrency cap** and **min delay** (defaults conservative; tunable aggressive).
 - **Adaptive throttling:** on 429/503/timeouts, exponentially back off that host; on sustained
-  success, ramp concurrency up to the cap.
+  success, ramp concurrency up to the cap. **Implemented (partial):** 429/5xx are retryable with
+  exponential backoff (`crawl.backoff`, 30s→30m) that honors a server `Retry-After` header; per-host
+  concurrency ramp-up is still to come.
 - **Global rate budget** to protect your uplink and the GPU/index pipeline downstream.
 - **DNS + connection caching** to cut latency.
 - **robots.txt / crawl-delay:** parser wired but **disabled by default** per owner decision;

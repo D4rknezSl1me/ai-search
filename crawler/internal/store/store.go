@@ -105,6 +105,7 @@ type FrontierItem struct {
 	Host         string
 	Depth        int
 	CampaignID   int64
+	Attempts     int    // prior failed attempts (drives exponential backoff)
 	ETag         string // prior validator for conditional GET ("" if none)
 	LastModified string // prior Last-Modified for conditional GET ("" if none)
 }
@@ -136,7 +137,7 @@ func (s *Store) ClaimNext(ctx context.Context, n int) ([]FrontierItem, error) {
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING f.id, f.url, f.host, f.depth, f.campaign_id,
+		RETURNING f.id, f.url, f.host, f.depth, f.campaign_id, f.attempts,
 		          COALESCE(f.etag, ''), COALESCE(f.last_modified, '')`, n)
 	if err != nil {
 		return nil, err
@@ -147,7 +148,7 @@ func (s *Store) ClaimNext(ctx context.Context, n int) ([]FrontierItem, error) {
 	for rows.Next() {
 		var it FrontierItem
 		if err := rows.Scan(&it.ID, &it.URL, &it.Host, &it.Depth, &it.CampaignID,
-			&it.ETag, &it.LastModified); err != nil {
+			&it.Attempts, &it.ETag, &it.LastModified); err != nil {
 			return nil, err
 		}
 		items = append(items, it)

@@ -136,11 +136,16 @@ func (s *Scheduler) process(ctx context.Context, item store.FrontierItem) {
 		return
 	}
 
-	// Non-2xx handling: retry 5xx, fail 4xx.
+	// Non-2xx handling: retry 5xx and 429 (rate limited) with backoff, fail other 4xx.
 	if res.Status >= 400 {
-		metrics.FetchTotal.WithLabelValues("error").Inc()
-		retry := res.Status >= 500
-		_ = s.store.MarkFailed(ctx, item.ID, retry, MaxAttempts, backoff(item))
+		rateLimited := res.Status == 429
+		if rateLimited {
+			metrics.FetchTotal.WithLabelValues("rate_limited").Inc()
+		} else {
+			metrics.FetchTotal.WithLabelValues("error").Inc()
+		}
+		retry := res.Status >= 500 || rateLimited
+		_ = s.store.MarkFailed(ctx, item.ID, retry, MaxAttempts, backoff(item.Attempts, res.RetryAfter))
 		return
 	}
 
@@ -274,9 +279,32 @@ func (s *Scheduler) discover(ctx context.Context, item store.FrontierItem, cfg s
 }
 
 func (s *Scheduler) retryOrFail(ctx context.Context, item store.FrontierItem, reason string) {
-	_ = s.store.MarkFailed(ctx, item.ID, true, MaxAttempts, backoff(item))
+	_ = s.store.MarkFailed(ctx, item.ID, true, MaxAttempts, backoff(item.Attempts, 0))
 }
 
-func backoff(item store.FrontierItem) time.Duration {
-	return 30 * time.Second
+const (
+	backoffBase = 30 * time.Second
+	backoffMax  = 30 * time.Minute
+)
+
+// backoff computes the reschedule delay for a failed fetch: exponential in the
+// number of prior attempts (30s, 1m, 2m, … capped at 30m), but never shorter
+// than a server-provided Retry-After (also capped). Honoring Retry-After keeps
+// us polite with rate-limiting origins so their URLs stay reachable (recall).
+func backoff(attempts int, retryAfter time.Duration) time.Duration {
+	shift := attempts
+	if shift > 6 {
+		shift = 6 // cap the shift so 30s<<shift can't overflow / exceed the max
+	}
+	d := backoffBase << uint(shift)
+	if d > backoffMax {
+		d = backoffMax
+	}
+	if retryAfter > d {
+		d = retryAfter
+	}
+	if d > backoffMax {
+		d = backoffMax
+	}
+	return d
 }

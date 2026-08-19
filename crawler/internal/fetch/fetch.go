@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,9 +22,31 @@ type Result struct {
 	ContentType  string
 	Body         []byte
 	Truncated    bool
-	NotModified  bool   // server returned 304 (conditional GET); Body is empty
-	ETag         string // response ETag, if any (store for the next conditional GET)
-	LastModified string // response Last-Modified, if any
+	NotModified  bool          // server returned 304 (conditional GET); Body is empty
+	ETag         string        // response ETag, if any (store for the next conditional GET)
+	LastModified string        // response Last-Modified, if any
+	RetryAfter   time.Duration // parsed Retry-After (429/503), 0 if absent
+}
+
+// parseRetryAfter interprets a Retry-After header value: either delta-seconds or
+// an HTTP-date. Returns 0 when absent/unparseable/in the past.
+func parseRetryAfter(v string) time.Duration {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(v); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 func New(timeout time.Duration, maxBodyBytes int64, userAgent string) *Fetcher {
@@ -78,6 +101,7 @@ func (f *Fetcher) GetConditional(ctx context.Context, rawURL, etag, lastModified
 		ContentType:  resp.Header.Get("Content-Type"),
 		ETag:         resp.Header.Get("ETag"),
 		LastModified: resp.Header.Get("Last-Modified"),
+		RetryAfter:   parseRetryAfter(resp.Header.Get("Retry-After")),
 	}
 	if resp.StatusCode == http.StatusNotModified {
 		res.NotModified = true

@@ -37,6 +37,37 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: rate-limit handling + adaptive backoff (recall reliability)
+
+**What**
+- Fixed a real recall loss and a stub: a **429 (Too Many Requests) was treated as a generic 4xx →
+  permanently FAILED after one attempt**, so rate-limited pages were lost forever; and `backoff()`
+  was a constant 30s. Now:
+  - 429 (and 5xx) are **retryable**; 429 is counted under `crawler_fetch_total{result="rate_limited"}`.
+  - `backoff(attempts, retryAfter)` is **exponential** in prior attempts (30s, 1m, 2m, … capped at
+    30m) and **never shorter than a server-provided `Retry-After`** (also capped) — polite with
+    rate-limiting origins so their URLs stay reachable.
+  - `fetch` parses the `Retry-After` header (delta-seconds *or* HTTP-date; past/junk → 0) into
+    `Result.RetryAfter`. `FrontierItem.Attempts` is now returned by `ClaimNext` so the scheduler can
+    compute the exponential delay per URL.
+
+**Why**
+- Maximum recall (CLAUDE.md) means not throwing away content just because a host briefly rate-limits
+  us — a 429 is "come back later", not "never". Honoring `Retry-After` + exponential backoff is the
+  standard polite-retry behavior and keeps otherwise-reachable pages in play; the constant-30s stub
+  could hammer a struggling origin (getting us blocked) or give up too soon.
+
+**Verification** (golang:1.25 container; crawler rebuilt into the running stack, boots healthy):
+- `go build ./...` + `go vet ./...` clean.
+- **Unit** — new `crawl/scheduler_test.go`: exponential schedule (0→30s, 1→1m, 2→2m, 3→4m, 6→30m
+  cap, 100→cap) and `Retry-After` precedence (honored when longer, exponential when longer, long
+  Retry-After capped). New `fetch` tests: `parseRetryAfter` (seconds / future HTTP-date / past→0 /
+  empty/junk→0) and a live httptest 429 returning `Retry-After: 7` → `Result.RetryAfter=7s`.
+- **Live integration** (running Postgres): `TestRecrawlRequeue` passes with `ClaimNext` now also
+  selecting `attempts` (assertions made isolation-robust — per-URL effects, since recrawl is global).
+
+---
+
 ## 2026-08-19 — Phase 4: crawler coverage/stats API (operator visibility)
 
 **What**

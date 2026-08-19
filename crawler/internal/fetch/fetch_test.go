@@ -8,6 +8,47 @@ import (
 	"time"
 )
 
+func TestParseRetryAfter(t *testing.T) {
+	if got := parseRetryAfter("5"); got != 5*time.Second {
+		t.Errorf("parseRetryAfter(\"5\") = %v, want 5s", got)
+	}
+	if got := parseRetryAfter("0"); got != 0 {
+		t.Errorf("parseRetryAfter(\"0\") = %v, want 0", got)
+	}
+	if got := parseRetryAfter(""); got != 0 {
+		t.Errorf("empty = %v, want 0", got)
+	}
+	if got := parseRetryAfter("nonsense"); got != 0 {
+		t.Errorf("junk = %v, want 0", got)
+	}
+	// An HTTP-date in the future yields a positive duration.
+	future := time.Now().Add(2 * time.Minute).UTC().Format(http.TimeFormat)
+	if got := parseRetryAfter(future); got <= 0 || got > 3*time.Minute {
+		t.Errorf("future date = %v, want ~2m", got)
+	}
+	// A past date yields 0.
+	past := time.Now().Add(-time.Hour).UTC().Format(http.TimeFormat)
+	if got := parseRetryAfter(past); got != 0 {
+		t.Errorf("past date = %v, want 0", got)
+	}
+}
+
+func TestGetConditionalCapturesRetryAfterOn429(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "7")
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+	f := New(5*time.Second, 1<<20, "test-agent")
+	res, err := f.Get(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != 429 || res.RetryAfter != 7*time.Second {
+		t.Fatalf("status=%d retryAfter=%v, want 429 / 7s", res.Status, res.RetryAfter)
+	}
+}
+
 func TestGetConditionalNotModified(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Emulate a validating origin: return 304 when the client's validator matches.
