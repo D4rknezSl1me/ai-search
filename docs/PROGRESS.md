@@ -30,6 +30,39 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-19 — Phase 4: sentence-aware chunking (no mid-sentence/mid-word splits)
+
+**What**
+- `ai/app/chunking.py` — the hard-split path for over-target paragraphs previously cut at an
+  arbitrary char offset (`min(i+target, e)`), i.e. mid-sentence and often mid-word, producing chunks
+  that embed and match poorly. It now snaps each window end to the **nearest sentence boundary**
+  (`. ! ?` + optional closing quote/bracket at a whitespace/end boundary), falling back to the
+  nearest whitespace, and only hard-cutting when a run has no break at all (e.g. a long URL/token).
+  New `_good_break(text, lo, hi)` helper; the split searches the back half of each window
+  (`lo = i + max(min_chars, target//2)`) so a snapped piece is never tiny and stays within target.
+- Behavior otherwise preserved: paragraph packing to `chunk_target_chars`, `chunk_overlap_chars`
+  overlap between chunks, tiny-tail merge (< `chunk_min_chars`) into the previous chunk, and char
+  offsets into the original text. `chunk_text` signature unchanged (indexer needs no change).
+- docs/05 §7 updated with the implementation note.
+
+**Why**
+- Chunking is "a major recall/precision lever" (docs/05 §7), and the doc already specified "never
+  split mid-sentence" — the code just wasn't honoring it. A chunk that ends mid-sentence gives the
+  embedding model a truncated thought and splits a fact across a boundary, hurting both vector and
+  lexical matching. Clean sentence boundaries improve match quality across every query (recall-first:
+  better-formed chunks surface more of the right content).
+
+**Verification**
+- **Full offline suite: 75 tests pass** (`ai/tests/`, local `pytest`, no network). New
+  `test_chunking.py` (7): empty/whitespace → none; short text → one chunk covering the span; two
+  small paragraphs pack into one; a long multi-sentence paragraph splits into ≥2 chunks that each
+  (but the last) **end on a sentence terminator, never mid-word**, cover the whole text with
+  overlap, and stay within target(+tail slack); an unbroken 500-char token still splits, progresses,
+  and covers fully (hard-cut fallback); and offsets map back to the source. Prior tests (68) green.
+- Import smoke: `app.indexer` (the sole `chunk_text` caller) imports unchanged.
+
+---
+
 ## 2026-08-19 — Phase 4: query intent classification (intent → freshness)
 
 **What**

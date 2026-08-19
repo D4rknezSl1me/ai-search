@@ -15,6 +15,27 @@ from .config import settings
 
 _PARA = re.compile(r"\n\s*\n+")
 _WS = re.compile(r"[ \t]+")
+# A sentence terminator (. ! ?) plus an optional closing quote/bracket, at a
+# boundary (followed by whitespace or end-of-text). `.end()` gives the index
+# just past the terminator — a clean place to break.
+_SENT_END = re.compile(r"""[.!?]["')\]]?(?=\s|$)""")
+
+
+def _good_break(text: str, lo: int, hi: int) -> int:
+    """Best break position in (lo, hi]: prefer a sentence end, then whitespace.
+
+    Returns `hi` when neither is available (a run with no break — e.g. a long URL
+    or token), so progress is always made. The caller keeps `lo` well above the
+    piece start, so a snapped break is never tiny.
+    """
+    window = text[lo:hi]
+    ends = [m.end() for m in _SENT_END.finditer(window)]
+    if ends:
+        return lo + ends[-1]
+    brk = max(window.rfind(" "), window.rfind("\n"))
+    if brk > 0:
+        return lo + brk
+    return hi
 
 
 @dataclass
@@ -54,7 +75,9 @@ def chunk_text(text: str) -> list[Chunk]:
         if part.strip():
             spans.append((start, end))
 
-    # Hard-split any paragraph longer than the target into windowed pieces.
+    # Split any paragraph longer than the target into windowed pieces, snapping
+    # each window end to a sentence boundary (then whitespace) near the target so
+    # a piece rarely ends mid-sentence and never mid-word unless unavoidable.
     pieces: list[tuple[int, int]] = []
     for s, e in spans:
         if e - s <= target:
@@ -62,8 +85,17 @@ def chunk_text(text: str) -> list[Chunk]:
             continue
         i = s
         while i < e:
-            j = min(i + target, e)
+            hard = min(i + target, e)
+            if hard >= e:
+                j = e
+            else:
+                floor = min(i + max(min_chars, target // 2), hard - 1)
+                j = _good_break(text, floor, hard)
+                if j <= i:
+                    j = hard
             pieces.append((i, j))
+            if j >= e:
+                break
             i = j - overlap if j - overlap > i else j
 
     # Pack pieces into chunks up to the target, carrying overlap between them.

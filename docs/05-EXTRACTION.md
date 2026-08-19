@@ -60,6 +60,12 @@ The unit of retrieval. Good chunking is a major recall/precision lever.
 - Attach chunk metadata: parent doc id, position, heading path, char offsets (for citation
   highlighting), language.
 - Store chunk text in OpenSearch and its vector in Qdrant, sharing a `chunk_id`.
+- **Implementation (`ai/app/chunking.py`):** packs paragraphs to `chunk_target_chars` with
+  `chunk_overlap_chars` overlap. A paragraph longer than the target is windowed with each window
+  end **snapped to the nearest sentence boundary** (then whitespace) within the back half of the
+  window, so a chunk ends mid-sentence only for a run with no break at all (e.g. a long URL/token),
+  and never mid-word otherwise. Tiny trailing crumbs (< `chunk_min_chars`) merge into the previous
+  chunk. Char offsets index the original text for traceback.
 
 ## 8. Embeddings
 

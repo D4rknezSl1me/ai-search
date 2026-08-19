@@ -139,6 +139,9 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   `FRESHNESS_HALF_LIFE_DAYS` — into the ordering after rerank. `auto` nudges, `fresh` pulls hard,
   `any` is pure relevance. Undated docs get a neutral weight (never buried for lacking a date) and
   freshness only *reorders* the shortlist, never drops candidates (recall-first).
+- [x] **Sentence-aware chunking** (`ai/app/chunking.py`): over-target paragraphs are windowed with
+  each break snapped to the nearest sentence boundary (then whitespace), so chunks no longer split
+  mid-sentence/mid-word — better-formed chunks embed and match more accurately (docs/05 §7).
 - [x] **Query-time near-duplicate dedup** (`ai/app/dedup.py`): assembly previously deduped only on
   an exact first-200-char match; it now collapses re-crawled/overlapping passages via word-shingle
   Jaccard (`DedupIndex`, threshold `dedup_jaccard_threshold`), so each of the `max_sources` slots
