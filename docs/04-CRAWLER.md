@@ -131,6 +131,10 @@ All discovery uses **free/open** sources only (no paid search APIs — see `CLAU
   commercial search APIs to widen the mouth of the funnel. **Implemented:**
   `crawler/internal/commoncrawl` (resolve latest crawls from `collinfo.json`, query the CDX index
   per domain, dedupe across crawls) behind `POST /internal/commoncrawl/ingest {campaign_id, domain}`.
+- **Self-hosted metasearch (SearXNG)** for full-text discovery — *"who mentions X across the web?"*
+  **Implemented:** `crawler/internal/metasearch` + `POST /internal/discover {campaign_id, query}`
+  queries SearXNG (aggregates public engines, no API keys) and enqueues the candidate URLs. This is
+  the layer that surfaces obscure references the URL-based sources miss.
 - Public/free URL datasets, open directories, and web archives.
 - Platform-specific discovery (hashtags, profiles, public search endpoints) for social — via
   free/open APIs or browser scraping, never paid data feeds.

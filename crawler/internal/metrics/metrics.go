@@ -99,6 +99,11 @@ var (
 		Help: "URLs newly enqueued into the frontier from Common Crawl index ingestion.",
 	})
 
+	MetasearchURLs = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "crawler_metasearch_urls_total",
+		Help: "URLs newly enqueued into the frontier from metasearch (SearXNG) discovery.",
+	})
+
 	RecrawlRequeued = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "crawler_recrawl_requeued_total",
 		Help: "FETCHED URLs re-enqueued for recrawl because they were stale.",

@@ -152,6 +152,19 @@ services:
       nats: { condition: service_healthy }
     restart: unless-stopped
 
+  # Self-hosted metasearch (SearXNG) — entity-centric discovery layer. Aggregates
+  # public search engines (no API keys, no paid services — rule 2) so the crawler
+  # can find URLs that mention a target across the web (docs/04 §7, docs/14 §8).
+  searxng:
+    profiles: ["app"]
+    image: searxng/searxng:latest
+    ports: ["8888:8080"]
+    volumes:
+      - ./searxng:/etc/searxng:ro
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    restart: unless-stopped
+
   ai-api:
     profiles: ["app"]
     build:

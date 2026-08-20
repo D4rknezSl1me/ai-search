@@ -43,6 +43,46 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-20 — Discovery: SearXNG metasearch ("who mentions X across the web")
+
+**What**
+- New `crawler/internal/metasearch` — discovers candidate URLs for a **free-text** query via a
+  self-hosted **SearXNG** metasearch instance (aggregates many public search engines; no API keys,
+  no paid services — CLAUDE.md rule 2). This is the layer the URL-based sources (Common Crawl,
+  sitemaps) can't provide: given a name/topic, it answers *"who mentions X across the web?"* — the
+  key to surfacing obscure references (the owner's "smallest local-newspaper mention" ask).
+  - `ParseResults` — pulls result URLs from a SearXNG `format=json` response (dedup, http(s) only).
+  - `Discover(base, query, fetch, opts)` — queries across `MaxPages` result pages, dedups, caps at
+    `MaxURLs`; injected fetch func → unit-testable offline. First-page failure fatal, later pages
+    best-effort (recall-first).
+- Endpoint `POST /internal/discover {campaign_id, query, max_urls?, max_pages?}` — validates the
+  campaign, runs `Discover` against `SEARXNG_URL` (default `http://searxng:8080`), and enqueues the
+  candidate URLs via the shared `enqueueURLs` path. Counter `crawler_metasearch_urls_total`.
+- Infra: `searxng` service added to the `app` profile (`deploy/searxng/settings.yml` enables the
+  JSON API + disables the local limiter). `.env.example` `SEARXNG_URL`.
+
+**Why**
+- The owner-approved discovery direction (max recall): metasearch + Common Crawl + targeted. A single
+  box can't mirror Google's index, but on-demand it can fan a *name* out to every public engine and
+  pull back the candidate pages — including buried ones — to crawl + index. This is the mechanism for
+  "find everything about anyone, including the hidden bits."
+
+**Verification** (golang:1.25 container; live stack: SearXNG + crawler rebuilt):
+- `go build ./...` + `go vet ./...` clean; `go test ./internal/metasearch/... ./internal/api/...`
+  both **ok**. New `metasearch_test.go` (7): JSON parse (dedup, non-http/junk skip), query-URL
+  encoding/format/trailing-slash, multi-page dedup, `MaxURLs` cap, first-page-error fatal, input
+  validation.
+- **Live end-to-end**: SearXNG JSON API up (21 results for "test"). `POST /internal/discover
+  {query:"Ada Lovelace mathematician"}` → `{discovered:15, enqueued:14}`; the frontier filled with
+  real web results (Wikipedia across zh/yo/xmf/zh-yue/zh-min-nan, talk/history pages) — i.e. the
+  crawler now discovers pages that *mention* a target, not just URLs under a known domain.
+
+**Follow-ups:** an **entity-discovery orchestrator** (one call → metasearch + Common Crawl +
+sitemaps/feeds fused), light result filtering (drop wiki edit/history noise), and wiring discovery
+into the search flow. Credential-gated social adapters as the owner provides logins (docs/14).
+
+---
+
 ## 2026-08-20 — Owner direction: entity-centric discovery + credentials onboarding guide
 
 **Context (owner testing the live product).** Two real gaps surfaced: (1) "Ada Lovelace" gave a

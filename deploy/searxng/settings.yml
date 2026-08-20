@@ -1,0 +1,17 @@
+# SearXNG settings for ai-search metasearch discovery.
+# Inherits upstream defaults, then enables the JSON API the crawler needs and
+# relaxes the bot limiter for local server-to-server calls.
+use_default_settings: true
+
+server:
+  # Override with a real random value in production (also SEARXNG_SECRET env).
+  secret_key: "change-me-ai-search-searxng"
+  limiter: false          # no per-IP rate limiting for local server-to-server use
+  image_proxy: false
+
+search:
+  formats:
+    - html
+    - json                # the crawler calls /search?format=json
+  autocomplete: ""
+  default_lang: "auto"

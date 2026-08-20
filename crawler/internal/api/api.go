@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/ai-search/crawler/internal/crawl"
 	"github.com/ai-search/crawler/internal/feeds"
 	"github.com/ai-search/crawler/internal/fetch"
+	"github.com/ai-search/crawler/internal/metasearch"
 	"github.com/ai-search/crawler/internal/metrics"
 	"github.com/ai-search/crawler/internal/sitemap"
 	"github.com/ai-search/crawler/internal/social"
@@ -72,7 +74,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/internal/sitemap/ingest", s.sitemapIngest)   // POST {"campaign_id":ID,"url":...}
 	mux.HandleFunc("/internal/feeds/ingest", s.feedsIngest)       // POST {"campaign_id":ID,"url":...}
 	mux.HandleFunc("/internal/commoncrawl/ingest", s.commonCrawlIngest) // POST {"campaign_id":ID,"domain":...}
+	mux.HandleFunc("/internal/discover", s.discover)                    // POST {"campaign_id":ID,"query":...}
 	return mux
+}
+
+// searxngBase returns the configured SearXNG metasearch base URL.
+func searxngBase() string {
+	if v := strings.TrimSpace(os.Getenv("SEARXNG_URL")); v != "" {
+		return v
+	}
+	return "http://searxng:8080"
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -334,6 +345,53 @@ func (s *Server) commonCrawlIngest(w http.ResponseWriter, r *http.Request) {
 	metrics.CommonCrawlURLs.Add(float64(enqueued))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"campaign_id": req.CampaignID,
+		"discovered":  len(urls),
+		"enqueued":    enqueued,
+	})
+}
+
+type discoverReq struct {
+	CampaignID int64  `json:"campaign_id"`
+	Query      string `json:"query"`
+	MaxURLs    int    `json:"max_urls"`
+	MaxPages   int    `json:"max_pages"`
+}
+
+// discover runs a free-text query through the self-hosted SearXNG metasearch and
+// enqueues the candidate URLs into the campaign frontier — entity-centric
+// discovery ("who mentions X across the web"), the recall-first north star.
+func (s *Server) discover(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "POST only"})
+		return
+	}
+	var req discoverReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	req.Query = strings.TrimSpace(req.Query)
+	if req.CampaignID == 0 || req.Query == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "campaign_id and query are required"})
+		return
+	}
+	ctx := r.Context()
+	if _, err := s.store.GetCampaign(ctx, req.CampaignID); err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown campaign"})
+		return
+	}
+
+	urls, err := metasearch.Discover(ctx, searxngBase(), req.Query, s.fetchBytes,
+		metasearch.Opts{MaxURLs: req.MaxURLs, MaxPages: req.MaxPages})
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	enqueued := s.enqueueURLs(ctx, req.CampaignID, urls)
+	metrics.MetasearchURLs.Add(float64(enqueued))
+	writeJSON(w, http.StatusOK, map[string]any{
+		"campaign_id": req.CampaignID,
+		"query":       req.Query,
 		"discovered":  len(urls),
 		"enqueued":    enqueued,
 	})
