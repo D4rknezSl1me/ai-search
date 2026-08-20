@@ -40,6 +40,7 @@ fleet when funded.
 | [11 – Security, Legal & Compliance](docs/11-SECURITY-LEGAL.md) | Risk register (deferred by owner decision) |
 | [12 – Roadmap](docs/12-ROADMAP.md) | Phase-by-phase build plan with concrete steps |
 | [13 – API Reference](docs/13-API.md) | External + internal API contracts |
+| [14 – Credentials & Onboarding](docs/14-CREDENTIALS.md) | Every platform needing auth + how to create dedicated accounts and wire creds |
 
 ## Quickstart (Phase 0)
 

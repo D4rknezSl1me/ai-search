@@ -43,6 +43,43 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-20 — Owner direction: entity-centric discovery + credentials onboarding guide
+
+**Context (owner testing the live product).** Two real gaps surfaced: (1) "Ada Lovelace" gave a
+thin answer, and (2) "Vanessa Vita" (Instagram) wasn't found. Root causes + response:
+- **Ada was starved, not wrong.** Retrieval was degraded (TEI vector + reranker were *off* → the
+  `vector/reranker unavailable` badges) and the corpus had ~no real Ada content. **Fixed
+  operationally:** brought up TEI (embeddings warmed up fine this run) + reranker, crawled the real
+  Wikipedia article (doc 112, 68 KB), re-indexed (93 docs embedded). "Who was Ada Lovelace?" now
+  returns the correct, cited answer — *"English mathematician and writer … analytical engine … first
+  computer programmer … only legitimate child of Lord Byron"* — with `degraded:{vector:false,
+  reranker:false,llm:false}` (full pipeline live). Confirms the engine works when fed + fully on.
+- **Vanessa Vita → Instagram isn't implemented** (login-walled; the deferred "needs creds" class).
+
+**Owner decisions (asked + answered):**
+1. **Discovery = metasearch + Common Crawl + targeted (max recall).** The system can't clone Google's
+   whole-web index on one box; the free/self-hosted substitute for "who mentions X across the web" is
+   a **self-hosted metasearch (SearXNG)** feeding the crawler, alongside the existing Common Crawl +
+   sitemap/feed discovery. This is the next major build (entity-centric discovery pipeline).
+2. **Social/walled platforms: creds later, but document *all* of them now.** Owner will supply
+   dedicated-account logins later; for now they want an exhaustive credentials guide.
+
+**Delivered this iteration:**
+- New **`docs/14-CREDENTIALS.md`** — exhaustive onboarding guide: every platform needing auth
+  (Instagram/Threads, Facebook, X, TikTok, LinkedIn, Snapchat, Pinterest, Tumblr, Bluesky, VK, Weibo,
+  Quora, Medium, Reddit, Telegram, Discord, Slack, YouTube, Twitch, Vimeo, SoundCloud, Spotify,
+  GitHub, GitLab, Stack Exchange, Discourse, Mastodon token…), each with auth type, **step-by-step
+  dedicated-account creation** (with the owner's "no 2FA / dedicated phone number" preference baked
+  in), where to get the token/session, and the exact `.env` var. Golden rules, exclusions (no paid
+  services), and a suggested onboarding order. Operational only (no legal/ToS commentary per rule 1).
+- `.env.example` gains a commented **platform-credentials** block (all var names) + `SEARXNG_URL`.
+
+**Next:** build the SearXNG metasearch discovery service + entity-centric discovery endpoint (given a
+name → fan out to metasearch + Common Crawl + sitemaps/feeds → crawl candidates → index → answer),
+then the credential-gated social adapters as the owner provides logins.
+
+---
+
 ## 2026-08-20 — Phase 5: search Web UI (minimal, self-hosted, streaming)
 
 **What**
