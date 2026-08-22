@@ -1,7 +1,8 @@
 # 03 — Feature Catalogue
 
 Features are tagged by target phase (see [12-ROADMAP.md](12-ROADMAP.md)):
-`P1` crawler MVP · `P2` search/RAG · `P3` JS/social · `P4` scale/quality · `P5` UI.
+`P1` crawler MVP · `P2` search/RAG · `P3` JS/social · `P4` scale/quality · `P5` UI ·
+`P6` agentic entity discovery.
 
 ## 1. Crawling & ingestion
 
@@ -15,6 +16,10 @@ Features are tagged by target phase (see [12-ROADMAP.md](12-ROADMAP.md)):
 - **Social-media ingestion** `P3` — per-platform adapters (see [08](08-SOCIAL-MEDIA.md)).
 - **Non-HTML formats** `P2` — PDF, DOCX, plaintext, RSS/Atom, JSON/APIs.
 - **Link discovery & recursion** `P1` — extract and enqueue outlinks with scope rules.
+- **Agentic entity discovery** `P6` — targeted multi-hop lookups from a structured *target brief*
+  (known attributes → the missing one): a local-LLM planner sequences the existing metasearch/crawl/
+  social tools in a plan→act→observe loop, with entity resolution scoring which candidate is the
+  target and a cited evidence trail. See [15-DISCOVERY-AGENT.md](15-DISCOVERY-AGENT.md).
 - **Scope control** `P1` — allow/deny by domain, path, regex, depth, MIME.
 - **Recrawl / freshness scheduling** `P4` — re-fetch cadence per source based on change rate.
 - **Incremental crawl** `P4` — conditional GET (ETag/Last-Modified), change detection.

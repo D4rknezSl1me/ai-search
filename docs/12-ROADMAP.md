@@ -199,6 +199,34 @@ operational runbooks + backups tested.
 
 **Exit criteria:** a client can self-serve search with cited answers and see coverage.
 
+## Phase 6 — Agentic entity discovery  📐 designed
+
+**Goal:** targeted, multi-hop lookups for ultra-specific needles — *"find the social handle of a
+person given a surname + school + a mutual friend"* — that a single breadth fan-out can't reach.
+Full design in [15-DISCOVERY-AGENT.md](15-DISCOVERY-AGENT.md).
+
+Approach: a **plan → act → observe → refine** loop with the **local LLM as the reasoner** and the
+**existing crawler/discovery/social tools as the actor** — no new fetch code, no paid API, no new
+framework (CLAUDE.md rule 2). Only the orchestration + entity-resolution intelligence are net-new.
+
+- [ ] Orchestrator service driving the loop (local LLM emits schema-validated tool actions;
+  degrades to a fixed query-generation heuristic when the LLM is down — recall-first).
+- [ ] Structured **target brief** model + `POST /v1/discover/entity` + a "targeted lookup" UI form.
+- [ ] LLM **query generation** from attributes (attribute-anchored dorks) → existing
+  `POST /internal/discover` + social adapter search.
+- [ ] **Entity-resolution scorer** (`candidate ↔ brief` attribute + relationship corroboration;
+  reuses Phase 4 NER + the reranker) with brief-enrichment feedback.
+- [ ] Per-run **lead frontier** (isolated, resumable) + explicit budget (`max_hops/fetches/wall_s`).
+- [ ] Eval extension: labeled solvable targets → *resolution* precision/recall + "found @ hop-k".
+
+**Depends on:** P1 fetch/render pipeline, P2 retrieval/rerank, P3 social adapters + anti-detection
+(all done), P4 NER enrichment. **Credential-gated hops** wait on owner-supplied accounts
+([14-CREDENTIALS.md](14-CREDENTIALS.md)); until then they degrade to open-web + metasearch evidence.
+
+**Exit criteria:** given a solvable target brief, the loop returns ranked candidate(s) with a
+confidence and a cited evidence trail, terminating within budget; resolution metrics tracked on the
+labeled set.
+
 ## Later / scale-out (on owned hardware — no paid services)
 
 - Distributed crawler fleet on the owner's own machines + self-run proxy pool; K8s/Nomad;
@@ -211,6 +239,8 @@ operational runbooks + backups tested.
 
 ```
 P0 ─▶ P1 ─▶ P2 ─▶ P4 ─▶ P5
-             ▲       ▲
-        P3 ──┘───────┘   (P3 needs P1 pipeline + P2 indexing; feeds P4/P5)
+             ▲       ▲     
+        P3 ──┘───────┘──▶ P6   (P6 = agentic entity discovery; orchestrates
+             (P3 needs P1 pipeline + P2 indexing;   P1 fetch + P2 retrieval +
+              feeds P4/P5/P6)                        P3 social + P4 NER)
 ```

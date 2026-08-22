@@ -139,6 +139,12 @@ All discovery uses **free/open** sources only (no paid search APIs — see `CLAU
 - Platform-specific discovery (hashtags, profiles, public search endpoints) for social — via
   free/open APIs or browser scraping, never paid data feeds.
 
+The sources above are **fan-out** (cast wide, index everything). For **ultra-specific targets** —
+finding one person from a few known attributes — a single fan-out isn't enough; the right query has
+to be *composed* from attributes and the search is multi-hop. That targeted, agentic
+plan→act→observe loop (local LLM as planner sequencing these same tools) is specified in
+[15-DISCOVERY-AGENT.md](15-DISCOVERY-AGENT.md).
+
 ## 8. Scope & campaign configuration
 
 A **crawl campaign** config defines:

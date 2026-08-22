@@ -41,6 +41,7 @@ fleet when funded.
 | [12 – Roadmap](docs/12-ROADMAP.md) | Phase-by-phase build plan with concrete steps |
 | [13 – API Reference](docs/13-API.md) | External + internal API contracts |
 | [14 – Credentials & Onboarding](docs/14-CREDENTIALS.md) | Every platform needing auth + how to create dedicated accounts and wire creds |
+| [15 – Agentic Entity Discovery](docs/15-DISCOVERY-AGENT.md) | Targeted multi-hop lookups: local-LLM planner sequencing existing crawl/social tools |
 
 ## Quickstart (Phase 0)
 
@@ -131,5 +132,9 @@ docker run --rm --network ai-search_default -v "$PWD/ai/eval:/eval" -w /eval \
   ordering); query-time near-duplicate dedup (shingle-Jaccard, frees source slots for distinct info)
 - [ ] **Phase 5 — Web UI** (in progress) — self-hosted search UI at `http://localhost:8000/`:
   streamed cited answers, clickable citation chips, source cards, confidence/coverage/degradation
+- [ ] **Phase 6 — Agentic entity discovery** (designed) — targeted multi-hop lookups for
+  ultra-specific needles (find a person from a surname + school + a mutual friend): a local-LLM
+  plan→act→observe loop that sequences the existing crawl/discovery/social tools and resolves which
+  candidate is actually the target (see [docs/15-DISCOVERY-AGENT.md](docs/15-DISCOVERY-AGENT.md))
 
 See [docs/12-ROADMAP.md](docs/12-ROADMAP.md) for details.

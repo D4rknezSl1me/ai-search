@@ -43,6 +43,39 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Design: agentic entity discovery (Phase 6) for ultra-specific targets
+
+**What**
+- New **`docs/15-DISCOVERY-AGENT.md`** — full design for a **targeted, multi-hop discovery loop** for
+  ultra-specific needles (e.g. *"find the social handle of a person given a surname + school + a
+  mutual friend"*), the concrete shape of the previously-named "entity-centric discovery pipeline."
+  It's a **plan → act → observe → refine** agent with the **local LLM as the reasoner** and the
+  **existing crawler/discovery/social tools as the actor** — structured target brief, LLM query
+  generation (attribute-anchored dorks), entity-resolution scoring (candidate ↔ brief overlap +
+  relationship corroboration), brief-enrichment feedback, a bounded per-run lead frontier, and a
+  cited evidence trail. Roadmap gains **Phase 6** (📐 designed); wired into `03-FEATURES`,
+  `04-CRAWLER §7`, `README`, and the dependency graph.
+
+**Why**
+- Owner explored (via a separate LLM chat) whether a distinct AI should *direct* the crawler for
+  ultra-specific person-finding. It maps directly onto the north star ("find every piece of info
+  about anyone") and onto what already exists: the breadth sources (Common Crawl, sitemaps,
+  metasearch) are fan-out and can't reach a single needle — the winning query has to be *composed*
+  from attributes and the search is multi-hop. Crucially this is **not a rewrite**: the actor
+  substrate (metasearch `/internal/discover`, frontier, render queue, social adapters, full
+  anti-detection) is already built + verified (Phases 1–3), and the reasoner is the local
+  `llama3.1:8b` already used for query expansion. Only the **orchestration + entity-resolution
+  intelligence** are net-new — and it adds **no paid service and no new evasion surface** (CLAUDE.md
+  rules 1–2 respected: no legal/ToS scope, everything self-hosted).
+
+**Verification**
+- Docs-only change (a design, not code): the plan is internally consistent and cross-linked
+  (04↔15, 12↔15, 03↔15, README↔15); Phase 6 checkbox mirrored in `README` and `12-ROADMAP`.
+  Implementation (orchestrator service, `POST /v1/discover/entity`, resolution scorer, lead
+  frontier, eval extension) is the delta enumerated in §6 / Phase 6 steps.
+
+---
+
 ## 2026-08-20 — Discovery: SearXNG metasearch ("who mentions X across the web")
 
 **What**
