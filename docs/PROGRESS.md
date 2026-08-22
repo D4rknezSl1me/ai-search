@@ -43,6 +43,40 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 6: entity-resolution scorer (the OBSERVE half — which candidate is the target)
+
+**What** — `ai/app/entity_resolve.py`, the precision crux of the discovery loop (docs/15 §4.2):
+- `Candidate` (name / handle / observed attributes / co-mentions / source_url) — the unit produced
+  by extraction and resolved here (this module never fetches).
+- `score_candidate(brief, candidate) → MatchScore` — scores a candidate as the **fraction of the
+  brief's *known* signals it corroborates** (so a sparse brief isn't penalized for fields it never
+  set; an empty brief scores 0). Weighted signals with a corroborated **relationship** as the
+  heaviest (the namesake disambiguator), plus surname/given-name, discriminator attributes, and an
+  age/birth-year proximity band. Matching is accent- and spelling-tolerant (stdlib `unicodedata`
+  NFKD strip + `difflib.SequenceMatcher`), with substring and handle-contains-name handling
+  (`@giuliarossi` ⇒ surname+given). `MatchScore` keeps the **per-signal breakdown** (fired signals
+  only) for the confidence + cited evidence trail, and `is_match(threshold=0.6)`.
+- `propose_enrichments(brief, candidate)` — the OBSERVE→REFINE feedback: new attributes the brief
+  doesn't know + an **inferred given name** (the single leftover name token beyond a known surname).
+  The orchestrator applies these only for above-threshold candidates, so a wrong match never
+  pollutes the brief.
+
+**Why** — Query generation finds *candidates*; this decides *which one is actually the target* —
+without it, a common surname's hits are noise. Scoring relative to known signals + a decisive
+relationship weight is what lets recall-first stay precise: park the ambiguous, expand only the
+corroborated. Pure/stdlib, no paid dep, reuses the brief model.
+
+**Verification** — 13 new tests (`tests/test_entity_resolve.py`) covering perfect/wrong match,
+fraction-of-known scoring, relationship-decides-between-namesakes, accent/fuzzy/handle matching,
+age tolerance, and enrichment inference. `ai/` offline suite **124 pass** (111 → 124), local
+`pytest` (no Docker). Roadmap Phase 6 scorer → `[~]`.
+
+**Next** — the orchestrator loop (`ai/`) tying PLAN (query gen) → ACT (existing `/internal/discover`
++ social search) → OBSERVE (extract candidates → this scorer) → REFINE, then `POST
+/v1/discover/entity` + the LLM planner on top of the deterministic backbone.
+
+---
+
 ## 2026-08-22 — Phase 6: target brief + attribute-anchored query generation (the PLAN backbone)
 
 **What** — First code for Phase 6 (agentic entity discovery), the deterministic backbone of the

@@ -220,8 +220,12 @@ framework (CLAUDE.md rule 2). Only the orchestration + entity-resolution intelli
   variants, ranked most-specific-first, §5 guardrail — every query carries ≥1 discriminator, a bare
   common surname is never fanned out). This is also the LLM-down fallback; the LLM planner on top +
   wiring to `POST /internal/discover` + social search are next.
-- [ ] **Entity-resolution scorer** (`candidate ↔ brief` attribute + relationship corroboration;
-  reuses Phase 4 NER + the reranker) with brief-enrichment feedback.
+- [~] **Entity-resolution scorer** (`ai/app/entity_resolve.py`) — done: scores a `Candidate`
+  (name/handle/attributes/co-mentions) against the brief as the *fraction of known signals it
+  corroborates* (accent- + spelling-tolerant via stdlib `difflib`/`unicodedata`), with a
+  corroborated **relationship** as the heaviest signal, a per-signal breakdown for the evidence
+  trail, and `propose_enrichments` (learned attributes + inferred given name) for the OBSERVE→REFINE
+  feedback. Wiring the extractor (Phase 4 NER + LLM read) that *produces* candidates is next.
 - [ ] Per-run **lead frontier** (isolated, resumable) + explicit budget (`max_hops/fetches/wall_s`).
 - [ ] Eval extension: labeled solvable targets → *resolution* precision/recall + "found @ hop-k".
 
