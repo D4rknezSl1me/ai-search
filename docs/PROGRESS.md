@@ -43,6 +43,40 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 6: target brief + attribute-anchored query generation (the PLAN backbone)
+
+**What** — First code for Phase 6 (agentic entity discovery), the deterministic backbone of the
+agent's PLAN step (docs/15 §3–4.1), both pure/offline-testable:
+- `ai/app/entity_brief.py` — the **target brief** model: `Goal` enum, `Relationship`, `Budget`, and
+  `TargetBrief` with a tolerant `from_dict` (parses API JSON *or* LLM-emitted briefs; accepts a
+  `subject`/`constraints` wrapper or a flat dict; never throws). `open_web` is always appended as the
+  un-gated evidence floor. Plus the loop's **brief-enrichment** feedback (`with_attribute` promotes a
+  discovered given_name/surname to its own field, else merges a free-form attribute; `with_handle`
+  adds a lead) — **first-write-wins** so a corroborating observation never clobbers a caller fact.
+- `ai/app/entity_queries.py` — **attribute-anchored query generation**: turns a brief into a ranked
+  batch of dorks (name × each discriminator/relationship, platform-scoped `site:` variants, an
+  all-discriminators combined query), phrase-quoting multi-word terms, ranked most-specific-first.
+  Enforces the **§5 guardrail**: every query carries ≥1 discriminator, so a common surname is never
+  fanned out unanchored (a discriminator-less brief yields only the plain name query). This is also
+  the **LLM-down fallback** (docs/15 §6).
+
+**Why** — This is the reasoner's deterministic core (and its degradation path): the orchestrator can
+plan real, target-narrowing queries with zero model dependency, which keeps recall-first bounded
+(load stays proportional to the target, not the surname's popularity). Net-new intelligence only —
+it sits on the already-built actor substrate (metasearch/crawl/social), adds no fetch code, no paid
+dep, no new evasion surface (CLAUDE.md rules 1–2).
+
+**Verification** — `ai/` offline suite **111 pass** (89 → 111; +22 new across
+`tests/test_entity_brief.py` + `tests/test_entity_queries.py`), run locally via `pytest` (no Docker;
+modules are pure stdlib). One test caught a real bug pre-commit — multi-word discriminator values
+weren't phrase-quoted (`Liceo Volta` → loose tokens); fixed to `_quote` every anchor. Roadmap Phase 6
+checkboxes updated (target brief + query generation → `[~]`).
+
+**Next** — the entity-resolution scorer (candidate ↔ brief overlap, the OBSERVE half), then the
+orchestrator loop + `POST /v1/discover/entity` + the LLM planner on top of this backbone.
+
+---
+
 ## 2026-08-22 — Design: agentic entity discovery (Phase 6) for ultra-specific targets
 
 **What**

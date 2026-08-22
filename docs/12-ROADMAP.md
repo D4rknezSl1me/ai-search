@@ -211,9 +211,15 @@ framework (CLAUDE.md rule 2). Only the orchestration + entity-resolution intelli
 
 - [ ] Orchestrator service driving the loop (local LLM emits schema-validated tool actions;
   degrades to a fixed query-generation heuristic when the LLM is down — recall-first).
-- [ ] Structured **target brief** model + `POST /v1/discover/entity` + a "targeted lookup" UI form.
-- [ ] LLM **query generation** from attributes (attribute-anchored dorks) → existing
-  `POST /internal/discover` + social adapter search.
+- [~] Structured **target brief** model (`ai/app/entity_brief.py`) — done: tolerant `from_dict`
+  parser (API- or LLM-supplied), attribute/relationship/budget model, and the loop's
+  brief-enrichment merge (`with_attribute`/`with_handle`, first-write-wins). `POST
+  /v1/discover/entity` + a "targeted lookup" UI form still to come.
+- [~] **Query generation** from attributes (`ai/app/entity_queries.py`) — done: the deterministic,
+  attribute-anchored backbone (name × discriminator/relationship dorks, platform-scoped `site:`
+  variants, ranked most-specific-first, §5 guardrail — every query carries ≥1 discriminator, a bare
+  common surname is never fanned out). This is also the LLM-down fallback; the LLM planner on top +
+  wiring to `POST /internal/discover` + social search are next.
 - [ ] **Entity-resolution scorer** (`candidate ↔ brief` attribute + relationship corroboration;
   reuses Phase 4 NER + the reranker) with brief-enrichment feedback.
 - [ ] Per-run **lead frontier** (isolated, resumable) + explicit budget (`max_hops/fetches/wall_s`).
