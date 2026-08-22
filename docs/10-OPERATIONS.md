@@ -110,6 +110,43 @@ and a smoke query.
 
 ## 10. Capacity planning
 
-- Track growth curves for disk, vector count, index size, and GPU throughput.
-- Forecast when the single-node setup saturates → triggers the scale-out steps in
-  [09-INFRASTRUCTURE.md](09-INFRASTRUCTURE.md).
+Track growth curves for disk, vector count, index size, and GPU throughput, and forecast when the
+single-node box saturates → triggers the scale-out steps in
+[09-INFRASTRUCTURE.md](09-INFRASTRUCTURE.md). Concrete rules-of-thumb for *this* setup
+(1024-dim `bge-large` vectors, ~1.6 KB / ~400-token chunks, ~5 chunks/doc average — orders of
+magnitude, not promises):
+
+**Per-chunk / per-doc footprint**
+
+| Store | Per unit | Notes |
+|-------|----------|-------|
+| Qdrant vector | 1024×4 B = **4 KB/chunk** (float32) | with `QDRANT_QUANTIZATION`: ~**1 KB/chunk** int8 in RAM + ~4 KB originals on disk for rescoring |
+| OpenSearch | ~**3–5 KB/chunk** on disk | text + inverted index (shingles) |
+| MinIO blob | ~few KB/**doc** (gzipped clean text) | shared across a doc's chunks |
+| Postgres | ~1 KB/doc + ~0.2 KB/chunk | metadata + frontier |
+
+**Scale checkpoints** (≈, at ~5 chunks/doc)
+
+| Corpus | Chunks | Qdrant (f32 / int8 RAM) | OpenSearch | MinIO+PG | ~Total disk |
+|--------|--------|-------------------------|------------|----------|-------------|
+| 1M docs | 5M | 20 GB / **5 GB RAM** | ~20 GB | ~7 GB | **~50 GB** |
+| 10M docs | 50M | 200 GB / **50 GB RAM** | ~200 GB | ~70 GB | **~0.5 TB** |
+
+→ Vector **RAM** is the first ceiling as the corpus grows; enabling int8 quantization (§ and
+`QDRANT_QUANTIZATION`) buys ~4× headroom before a second node is needed.
+
+**GPU / VRAM (single RTX 5070, ~12 GB)** — time-shared across three models
+([09 §3](09-INFRASTRUCTURE.md)): embeddings (TEI `bge-large`, ~1.5–2 GB) + re-ranker (~1 GB) +
+synthesis (`llama3.1:8b` 4-bit, ~5–6 GB) ≈ **8–9 GB**, fits with headroom. Stepping to a 14B
+synthesis model means unloading embeddings/reranker during generation (or a second GPU). Embedding
+currently runs on **CPU** pending stable Blackwell/sm_120 TEI kernels — that's the throughput
+bottleneck, not VRAM (see `docs/PROGRESS.md`).
+
+**Saturation triggers → action** (watch via §1 metrics + §5 alerts)
+
+- Disk > ~70% → add disk, prune raw HTML, or enable quantization.
+- Qdrant RAM pressure → turn on `QDRANT_QUANTIZATION` (int8), keep originals on disk.
+- `IndexingBacklogGrowing` firing sustained → the embed/index pipeline can't keep up with crawl;
+  slow the crawl (per-host budgets) or add embed throughput (GPU kernels / a second embedder).
+- Query P95 climbing while embed backlog grows → throttle embed workers, or split embedding onto a
+  dedicated GPU (first scale-out step).

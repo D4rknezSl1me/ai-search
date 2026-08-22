@@ -43,6 +43,32 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 4: capacity-planning notes (closes the ops bundle)
+
+**What** — Expanded `docs/10-OPERATIONS.md` §10 from a stub into concrete capacity math for this
+single-device box: a per-chunk/per-doc **footprint table** (Qdrant 4 KB f32 / ~1 KB int8, OpenSearch
+3–5 KB, MinIO/PG), **scale checkpoints** at 1M (~50 GB, 5 GB vector-RAM) and 10M docs (~0.5 TB, 50 GB
+vector-RAM), the **RTX 5070 VRAM budget** (embeddings + reranker + 8B synthesis ≈ 8–9 GB of ~12 GB,
+time-shared), and **saturation triggers → actions** wired to the §1 metrics + §5 alerts (disk 70%,
+Qdrant RAM → quantization, `IndexingBacklogGrowing` → slow crawl / add embed throughput, P95 climb →
+dedicated embed GPU).
+
+**Why** — For a long-term single-device project the owner needs to know *when* the box saturates and
+*what to do* — grounded numbers, not hand-waving. It ties together the two prior ops increments
+(quantization as the vector-RAM lever, the backlog alert as the pipeline signal) into a planning
+guide, completing the Phase 4 "backups, runbooks, capacity planning" bundle.
+
+**Verification** — Docs-only; numbers are order-of-magnitude rules-of-thumb derived from the actual
+config (1024-dim vectors, ~1.6 KB chunks) and stated as such. Cross-links to §1/§5/§ and
+`QDRANT_QUANTIZATION` are consistent. Offline suite unaffected (**200 pass**). Roadmap Phase 4
+backups/quantization/capacity bundle → done except **live restore-testing** (needs the stack up).
+
+**Next** — the offline-verifiable roadmap is essentially exhausted; remaining items (NER/media
+enrichment, richer intelligence-plane coverage, Grafana client dashboards, live restore/quantization
+verification) need the GPU/datastore stack. Phase 6 feature-complete.
+
+---
+
 ## 2026-08-22 — Phase 4: Qdrant vector quantization (config-gated, for density)
 
 **What** — Extracted the Qdrant collection payload into a pure `indexes.qdrant_collection_body()`

@@ -199,7 +199,10 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   Qdrant/OpenSearch/MinIO, `-Cold`/`-IncludeExtras` options; restore steps in
   [10-OPERATIONS §6](10-OPERATIONS.md)). **Vector quantization done** (`indexes.qdrant_collection_body`
   + `QDRANT_QUANTIZATION`): config-gated scalar int8 quantization (~4x-smaller RAM vectors, originals
-  kept for rescoring) on new collections. Capacity-planning notes still to come.
+  kept for rescoring) on new collections. **Capacity-planning notes done** ([10-OPERATIONS
+  §10](10-OPERATIONS.md): per-doc footprint, 1M/10M-doc disk+RAM checkpoints, RTX 5070 VRAM budget,
+  saturation triggers → actions). Only **live restore-testing** of the backups remains (needs the
+  stack up).
 
 **Exit criteria:** stable at target scale on current hardware; quality metrics improved vs P2;
 operational runbooks + backups tested.
