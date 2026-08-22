@@ -43,6 +43,10 @@ log = logging.getLogger("entity_orchestrator")
 # ACT: given one planned query, return the candidates discovered for it. The real
 # adapter calls metasearch/social + fetch + extract; tests supply a fake.
 SearchFn = Callable[[GeneratedQuery], Awaitable[list[Candidate]]]
+# PLAN: given the current (enriched) brief, return the queries to run this hop.
+# Default is the deterministic `generate_queries`; the LLM planner (entity_planner)
+# is the same shape and unions its ideas with that backbone.
+PlanFn = Callable[[TargetBrief], Awaitable[list[GeneratedQuery]]]
 Clock = Callable[[], float]
 
 # A candidate at/above this score ends the loop early — the target is resolved.
@@ -95,13 +99,25 @@ async def discover_entity(
     brief: TargetBrief,
     search: SearchFn,
     *,
+    plan: PlanFn | None = None,
     config: RunConfig | None = None,
     now: Clock = time.monotonic,
 ) -> DiscoveryResult:
-    """Run the bounded plan→act→observe→refine loop for one target brief."""
+    """Run the bounded plan→act→observe→refine loop for one target brief.
+
+    `plan` is the PLAN step; by default the deterministic `generate_queries`. Pass
+    the LLM planner (entity_planner.make_llm_planner) to layer model-proposed
+    queries on top — it degrades to the deterministic backbone on its own, so the
+    loop never depends on the model being up (recall-first).
+    """
     cfg = config or RunConfig()
     budget = brief.budget
     start = now()
+
+    async def _default_plan(b: TargetBrief) -> list[GeneratedQuery]:
+        return generate_queries(b, max_queries=cfg.max_queries_per_hop)
+
+    planner = plan or _default_plan
 
     best_by_id: dict[str, ScoredCandidate] = {}
     seen_queries: set[str] = set()
@@ -114,7 +130,11 @@ async def discover_entity(
 
     while hops < budget.max_hops and fetches < budget.max_fetches and not timed_out():
         # PLAN — queries reflect the current (possibly enriched) brief.
-        queries = generate_queries(brief, max_queries=cfg.max_queries_per_hop)
+        try:
+            queries = await planner(brief)
+        except Exception:
+            log.exception("planner failed; falling back to deterministic queries")
+            queries = generate_queries(brief, max_queries=cfg.max_queries_per_hop)
         fresh = [q for q in queries if q.text.casefold() not in seen_queries]
         if not fresh:
             break  # fixpoint: refinement produced no new leads → stop (§5)

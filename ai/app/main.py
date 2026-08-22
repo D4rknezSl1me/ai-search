@@ -28,6 +28,7 @@ from .schemas import (
 from . import synthesis
 from .entity_brief import TargetBrief
 from .entity_orchestrator import discover_entity
+from .entity_planner import make_llm_planner
 from .entity_search import make_retrieval_search
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -362,9 +363,19 @@ async def v1_discover_entity(req: DiscoverEntityRequest) -> JSONResponse:
         result = await retrieve(query, Filters(), max_sources=req.max_candidates, expand=False)
         return result.candidates
 
+    # PLAN: use the local LLM as the reasoner when it's up, else the deterministic
+    # query generation (make_llm_planner degrades on its own too — recall-first).
+    llm = _planner_llm if await clients.llm_available() else None
+    plan = make_llm_planner(llm)
+
     search = make_retrieval_search(brief, retrieve_fn)
-    result = await discover_entity(brief, search)
+    result = await discover_entity(brief, search, plan=plan)
     return JSONResponse(_discovery_payload(result, req.max_results))
+
+
+async def _planner_llm(messages: list[dict[str, str]], temperature: float) -> str:
+    """Adapter handed to the LLM planner so entity_planner stays client-free."""
+    return await clients.llm_complete(messages, options={"temperature": temperature})
 
 
 # ------------------------------------------------------------------ coverage ---

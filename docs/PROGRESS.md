@@ -43,6 +43,40 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 6: LLM planner (the local model as reasoner over the deterministic backbone)
+
+**What** — `ai/app/entity_planner.py` + an injectable PLAN step in the orchestrator:
+- `make_llm_planner(llm) → PlanFn` — asks the local LLM (same `LLMFn` DI shape as `understand.py`)
+  for the next batch of search queries given the brief, then **unions** them with
+  `generate_queries` (never replaces): parse (tolerant JSON, objects-or-strings) → `sanitize`
+  (guardrail-filter so every model query carries a real discriminator or a `site:` scope; dedupe;
+  cap length; compute specificity) → `_merge` (dedupe against the deterministic backbone, rank
+  most-specific-first, cap). Degrades to exactly the deterministic set when the LLM is absent,
+  errors, or returns nothing — planning can never fail a lookup (recall-first).
+- `entity_orchestrator.discover_entity` gains an optional `plan: PlanFn` (default = deterministic
+  `generate_queries`), and the PLAN call is wrapped so a planner exception falls back mid-loop.
+- `POST /v1/discover/entity` now builds the LLM planner when `clients.llm_available()`, else passes
+  the deterministic default — the local model is used as the reasoner when it's up, transparently.
+
+**Why** — This is the "separate AI that tells the crawler where to look" from the owner's original
+question: a fixed template can't invent a locale-specific phrasing, a likely username, or a
+"school roster" angle — the LLM can. Making it strictly *additive* over the guardrailed backbone
+means the reasoner only ever *adds* recall and the loop stays correct (and free) when the model is
+down. No paid API — the planner is the local Ollama model (CLAUDE.md rule 2).
+
+**Verification** — 13 new tests (`tests/test_entity_planner.py`): parsing tolerance, the guardrail
+(bare-name dropped, `site:`/relationship/attribute accepted, no-discriminator briefs allow the
+name), union-with-deterministic, error/empty degradation, dedupe, and cap. A `site:`-scope bug was
+caught pre-commit — `_norm` strips the `:` so the scope check now runs on the raw text. `ai/` offline
+suite **162 pass** (149 → 162); orchestrator's injected-plan path covered; `app.main` imports with
+the route intact. Roadmap Phase 6: orchestrator/query-gen/planner → `[x]`.
+
+**Next** — the live-discovery search adapter (`POST /internal/discover` → crawl URLs not yet indexed
+→ extract, to complement the retrieval-backed adapter), a "targeted lookup" UI form, and the
+resolution eval set.
+
+---
+
 ## 2026-08-22 — Phase 6: wired end-to-end — candidate extraction + search adapter + `POST /v1/discover/entity`
 
 **What** — Closed the loop into a live HTTP endpoint. Three additions:

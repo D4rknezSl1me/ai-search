@@ -209,21 +209,26 @@ Approach: a **plan → act → observe → refine** loop with the **local LLM as
 **existing crawler/discovery/social tools as the actor** — no new fetch code, no paid API, no new
 framework (CLAUDE.md rule 2). Only the orchestration + entity-resolution intelligence are net-new.
 
-- [~] Orchestrator loop core (`ai/app/entity_orchestrator.py`) — done: the pure plan→act→observe→
-  refine control flow composing brief+queries+resolve, with the ACT step (search/extract)
-  dependency-injected; bounded by the brief's budget (hops/fetches/wall-clock), enriches the brief
-  from above-threshold matches, dedupes+ranks candidates, and stops on {confident match, budget,
-  no new leads}. **Wired end-to-end** via `POST /v1/discover/entity`. The LLM planner on top is next.
+- [x] Orchestrator loop core (`ai/app/entity_orchestrator.py`) — the pure plan→act→observe→refine
+  control flow composing brief+queries+resolve, with the PLAN + ACT steps dependency-injected;
+  bounded by the brief's budget (hops/fetches/wall-clock), enriches the brief from above-threshold
+  matches, dedupes+ranks candidates, and stops on {confident match, budget, no new leads}. **Wired
+  end-to-end** via `POST /v1/discover/entity`.
 - [x] Structured **target brief** model (`ai/app/entity_brief.py`) — tolerant `from_dict` parser
   (API- or LLM-supplied), attribute/relationship/budget model, and the loop's brief-enrichment merge
   (`with_attribute`/`with_handle`, first-write-wins).
 - [x] **`POST /v1/discover/entity`** endpoint (`ai/app/main.py` + schemas) — brief in →
   `DiscoveryResult` out (ranked candidates + per-signal evidence + stats); rejects a brief with no
   name/handle. A "targeted lookup" UI form still to come.
-- [~] **Query generation** from attributes (`ai/app/entity_queries.py`) — done: the deterministic,
+- [x] **Query generation** from attributes (`ai/app/entity_queries.py`) — the deterministic,
   attribute-anchored backbone (name × discriminator/relationship dorks, platform-scoped `site:`
   variants, ranked most-specific-first, §5 guardrail — every query carries ≥1 discriminator, a bare
-  common surname is never fanned out). This is also the LLM-down fallback; the LLM planner on top is next.
+  common surname is never fanned out). Also the LLM-down fallback.
+- [x] **LLM planner** (`ai/app/entity_planner.py`) — the local LLM as reasoner: proposes extra
+  queries (locale phrasings, username guesses, roster/venue angles), **unioned with** (never
+  replacing) the deterministic backbone, each guardrail-filtered to carry a real discriminator.
+  Degrades to the deterministic set on absent/errored/empty LLM. Wired into the endpoint (used when
+  the local model is up).
 - [x] **Entity-resolution scorer** (`ai/app/entity_resolve.py`) — scores a `Candidate`
   (name/handle/attributes/co-mentions) against the brief as the *fraction of known signals it
   corroborates* (accent- + spelling-tolerant via stdlib `difflib`/`unicodedata`), with a

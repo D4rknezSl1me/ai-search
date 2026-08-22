@@ -10,6 +10,7 @@ import asyncio
 import json
 from dataclasses import dataclass, field
 
+import app.clients as clients
 import app.main as main
 from app.schemas import (
     DiscoverConstraints,
@@ -31,6 +32,10 @@ class _Result:
     candidates: list = field(default_factory=list)
 
 
+async def _no_llm():
+    return False
+
+
 def _call(req):
     body = asyncio.run(main.v1_discover_entity(req)).body
     return json.loads(body)
@@ -46,6 +51,7 @@ def test_endpoint_resolves_and_shapes_payload(monkeypatch):
         return _Result([])
 
     monkeypatch.setattr(main, "retrieve", fake_retrieve)
+    monkeypatch.setattr(clients, "llm_available", _no_llm)  # deterministic planner
 
     req = DiscoverEntityRequest(
         goal="social_handle",
