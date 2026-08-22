@@ -71,6 +71,10 @@
   .badge.sig { color: var(--accent); border-color: #2d4b45; }
   .link { cursor: pointer; user-select: none; }
   .link:hover { color: var(--text); }
+  .apikey { text-align: center; margin-top: 40px; }
+  .apikey label { font-size: 12px; color: var(--muted); display: inline-flex; gap: 8px; align-items: center; }
+  .apikey input { background: var(--panel); border: 1px solid var(--line); color: var(--text); padding: 8px 12px; border-radius: 10px; font-size: 13px; width: 280px; outline: none; }
+  .apikey input:focus { border-color: var(--accent2); }
   .history { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; }
   .history .h { background: var(--panel); border: 1px solid var(--line); color: var(--muted); padding: 5px 11px; border-radius: 999px; font-size: 12.5px; cursor: pointer; }
   .history .h:hover { color: var(--text); border-color: var(--accent2); }
@@ -155,6 +159,9 @@
   <div id="sources"></div>
   <div id="coveragePanel" class="card hidden"></div>
 
+  <div class="apikey">
+    <label>API key <input id="apiKey" type="password" placeholder="only if the server requires auth" autocomplete="off" /></label>
+  </div>
   <footer>Fully self-hosted · local LLM · no paid APIs · <span class="link" id="covToggle">coverage</span></footer>
 </div>
 
@@ -165,6 +172,18 @@ const statusEl = $('#status'), answerCard = $('#answerCard'), answerEl = $('#ans
       metaEl = $('#meta'), sourcesEl = $('#sources');
 
 function esc(s){ return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+// ---- API key (optional; only needed when the server has AUTH_ENABLED) ------
+const AKEY = 'aisearch_apikey';
+const apiKeyEl = $('#apiKey');
+apiKeyEl.value = localStorage.getItem(AKEY) || '';
+apiKeyEl.addEventListener('change', () => localStorage.setItem(AKEY, apiKeyEl.value.trim()));
+function authHeaders(){
+  const h = { 'Content-Type': 'application/json' };
+  const k = (localStorage.getItem(AKEY) || '').trim();
+  if(k) h['X-API-Key'] = k;
+  return h;
+}
 
 // Render answer text, turning [n] into clickable citation chips.
 function renderAnswer(text){
@@ -209,8 +228,12 @@ async function search(query){
   const body = { query, filters: collectFilters(), options: { stream:true, synthesize: $('#synth').checked, freshness: $('#fresh').value, max_sources: 8 } };
   let resp;
   try {
-    resp = await fetch('/v1/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    resp = await fetch('/v1/search', { method:'POST', headers: authHeaders(), body: JSON.stringify(body) });
   } catch(e){ statusEl.textContent = 'Request failed: ' + e; go.disabled=false; return; }
+  if(resp.status === 401 || resp.status === 429){
+    statusEl.textContent = resp.status === 401 ? 'API key required or invalid (set it below).' : 'Rate limit exceeded — try again shortly.';
+    go.disabled = false; return;
+  }
 
   const reader = resp.body.getReader(), dec = new TextDecoder();
   let buf = '';
@@ -346,7 +369,11 @@ async function runDiscover(){
   statusEl.innerHTML = '<span class="dot"></span>Searching corpus &amp; live web…';
   let data;
   try {
-    const r = await fetch('/v1/discover/entity', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(brief) });
+    const r = await fetch('/v1/discover/entity', { method:'POST', headers: authHeaders(), body: JSON.stringify(brief) });
+    if(r.status === 401 || r.status === 429){
+      statusEl.textContent = r.status === 401 ? 'API key required or invalid (set it below).' : 'Rate limit exceeded — try again shortly.';
+      btn.disabled = false; return;
+    }
     data = await r.json();
   } catch(e){ statusEl.textContent = 'Request failed: ' + e; btn.disabled=false; return; }
   btn.disabled = false;

@@ -215,7 +215,11 @@ operational runbooks + backups tested.
   `GET /v1/coverage` (now degrades to `available:false` instead of 500 when Postgres is down) and
   renders documents/indexed/chunks + top domains, or a graceful "datastores unavailable" note.
   Verified in a real browser. Grafana-style monitoring dashboards for clients still to come.
-- Auth/onboarding; usage/billing views.
+- [~] Auth/onboarding; usage/billing views. **Client API-key onboarding done**: the UI has an API
+  key field (persisted in localStorage) that sends `X-API-Key` on `/v1/*` calls and shows a clear
+  "API key required / rate limit exceeded" message on 401/429 — so the browser works against an
+  auth-enabled server. Verified in a real browser (blocked without key → authenticated with key).
+  Usage/billing dashboards still to come.
 
 **Exit criteria:** a client can self-serve search with cited answers and see coverage.
 

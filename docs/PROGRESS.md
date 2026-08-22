@@ -43,6 +43,30 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 5: client API-key onboarding in the UI
+
+**What** — The self-hosted UI (`ai/app/static/index.html`) gains an **API key** field (persisted in
+`localStorage`). `authHeaders()` attaches `X-API-Key` to both `/v1/search` and `/v1/discover/entity`
+fetches when a key is set, and both flows now handle **401/429** with a clear message ("API key
+required or invalid (set it below)" / "Rate limit exceeded — try again shortly") instead of failing
+opaquely. Zero effect when the server has auth off (no key → no header).
+
+**Why** — The backend gained API-key auth + rate limiting last iteration, but the browser had no way
+to present a key, so an auth-enabled server was unusable from its own UI. This closes that loop — the
+client-side half of the Phase 5 auth/onboarding item.
+
+**Verification** — **Real-browser (Playwright)** against uvicorn with `AUTH_ENABLED=true
+API_KEYS=testkey`: searching **without** a key showed *"API key required or invalid (set it below)."*
+(the request was rejected 401); after typing `testkey` into the field and re-running, the search
+**authenticated through** and rendered the retrieve-only result card. The lone console entry is the
+browser's own network log for the intentional 401 (no JS error, none on the successful call). `ai/`
+offline suite **196 pass** (UI-only change). Roadmap Phase 5 auth/onboarding → `[~]`.
+
+**Next** — remaining Phase 4 hardening (backups/runbooks tested, NER/media enrichment, vector
+quantization) and Phase 5 usage/billing dashboards. Phase 6 feature-complete.
+
+---
+
 ## 2026-08-22 — Phase 4: per-key usage metering (+ /metrics plain-text fix)
 
 **What** — `ai/app/usage.py` (`UsageMeter` + `mask_key`) counts `/v1/*` requests by key and outcome
