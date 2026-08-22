@@ -43,6 +43,41 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 6: "Find a person" UI (the capstone) — feature-complete
+
+**What** — Added a targeted-lookup mode to the self-hosted UI (`ai/app/static/index.html`), the
+client-facing face of the whole discovery loop:
+- A **mode tab** switches the page between "Search" (the existing cited-answer flow) and "Find a
+  person". The find form collects a target brief — surname, given name (blank = the thing to find),
+  goal, city/school/employer discriminators, a related-person + relation (the namesake
+  disambiguator), and a live-web-discovery toggle — and POSTs it to `/v1/discover/entity`.
+- Results render as **ranked candidate cards**: name + handle, score, per-signal **evidence chips**
+  (surname/relationship/attr:* with strengths), observed attributes, co-mentions ("seen with …"),
+  and the source link; the best match is highlighted, with a status/hops/fetches/elapsed header. No
+  build step, no CDNs — consistent with the self-hosted ethos.
+
+**Why** — The backend loop was proven, but a person-finding product needs a face a non-engineer can
+drive. This turns "find the sister of a friend from a surname + school + a mutual name" into a form
+anyone can fill, with the evidence for each guess shown inline (the cited-trail discipline extended
+from search to discovery). It completes the Phase 6 exit criteria on the product side.
+
+**Verification** — **Real-browser (Playwright)** against a locally-run `uvicorn app.main:app`:
+navigated to `/`, switched to "Find a person", filled surname=Rossi, city=Como, related=Marco Rossi,
+submitted → the page rendered **"Result — no_match"** with `status/1 hops/3 fetches/6.2s` badges and
+the empty-state line (correct: no datastores up, so the retrieval source is skipped and the loop
+returns a well-formed empty result — proving the full form→endpoint→render path). **Console clean (0
+errors).** Also confirmed the endpoint directly returns valid JSON (`/v1/discover/entity` →
+`status:no_match, candidates:[]`). Offline suite still **168 pass**; `app.main` serves the 16.7 KB UI
+with the route registered. Roadmap Phase 6 → 🔨 feature-complete (hardening left); README Phase 6 →
+`[~]`.
+
+**Next (hardening, not features)** — a live end-to-end run over a real indexed corpus + SearXNG (a
+stack-up session), a persisted/resumable per-run lead frontier, and optional full-page fetch of
+discovered URLs. Otherwise Phase 6 is functionally done; the loop can return to remaining Phase 4/5
+polish.
+
+---
+
 ## 2026-08-22 — Phase 6: live-discovery search source (reach pages not yet indexed)
 
 **What** — Generalized the ACT step to union multiple doc sources and added live discovery:

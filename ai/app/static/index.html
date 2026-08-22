@@ -59,6 +59,16 @@
   .status { color: var(--muted); font-size: 14px; margin-top: 22px; min-height: 20px; }
   .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 8px; animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
+  .tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 6px; }
+  .tab { background: var(--panel); color: var(--muted); border: 1px solid var(--line); padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .tab.active { color: #0b0e14; background: linear-gradient(180deg, var(--accent), #43c9b4); border-color: transparent; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0 8px; }
+  .grid label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  .grid input, .grid select { background: var(--panel); border: 1px solid var(--line); color: var(--text); padding: 11px 12px; border-radius: 10px; font-size: 14px; outline: none; }
+  .grid input:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px #7c9cff22; }
+  .cand.best { border-color: var(--accent); box-shadow: 0 0 0 3px #5eead422; }
+  .cand .hand { color: var(--accent2); font-weight: 600; }
+  .badge.sig { color: var(--accent); border-color: #2d4b45; }
   footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 50px; }
 </style>
 </head>
@@ -69,17 +79,55 @@
     <div class="tag">Find every piece of information — cited, from your own crawled corpus.</div>
   </header>
 
+  <div class="tabs">
+    <button type="button" class="tab active" id="tabSearch">Search</button>
+    <button type="button" class="tab" id="tabFind">Find a person</button>
+  </div>
+
   <form id="f">
     <input id="q" type="text" placeholder="Ask anything…" autocomplete="off" autofocus />
     <button id="go" type="submit">Search</button>
   </form>
-  <div class="opts">
+  <div class="opts" id="searchOpts">
     <label><input type="checkbox" id="synth" checked /> Synthesize answer</label>
     <label>Freshness
       <select id="fresh" style="background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:3px 6px;">
         <option value="auto">auto</option><option value="fresh">fresh</option><option value="any">any</option>
       </select>
     </label>
+  </div>
+
+  <div id="discoverPanel" class="hidden">
+    <div class="grid">
+      <label>Surname <input id="dSurname" type="text" placeholder="Rossi" autocomplete="off" /></label>
+      <label>Given name (leave blank if unknown) <input id="dGiven" type="text" placeholder="the thing to find" autocomplete="off" /></label>
+      <label>Goal
+        <select id="dGoal">
+          <option value="any_info">any info</option>
+          <option value="social_handle">social handle</option>
+          <option value="real_name">real name</option>
+          <option value="contact">contact</option>
+          <option value="photos">photos</option>
+        </select>
+      </label>
+      <label>City <input id="dCity" type="text" placeholder="Como" autocomplete="off" /></label>
+      <label>School <input id="dSchool" type="text" placeholder="Liceo Volta" autocomplete="off" /></label>
+      <label>Employer <input id="dEmployer" type="text" placeholder="Acme Corp" autocomplete="off" /></label>
+      <label>Related person (mutual friend / sibling…) <input id="dRelName" type="text" placeholder="Marco Rossi" autocomplete="off" /></label>
+      <label>Relation
+        <select id="dRelType">
+          <option value="sibling_of">sibling of</option>
+          <option value="friend_of">friend of</option>
+          <option value="parent_of">parent of</option>
+          <option value="child_of">child of</option>
+          <option value="works_with">works with</option>
+        </select>
+      </label>
+    </div>
+    <div class="opts">
+      <label><input type="checkbox" id="dLive" checked /> Live web discovery (SearXNG)</label>
+      <button id="findGo" type="button">Find</button>
+    </div>
   </div>
 
   <div id="status" class="status"></div>
@@ -174,6 +222,88 @@ async function search(query){
 }
 
 form.addEventListener('submit', e => { e.preventDefault(); const q = input.value.trim(); if(q) search(q); });
+
+// ---- mode tabs: Search ⇄ Find a person -----------------------------------
+const tabSearch = $('#tabSearch'), tabFind = $('#tabFind');
+const searchOpts = $('#searchOpts'), discoverPanel = $('#discoverPanel');
+function clearOutput(){
+  answerCard.classList.add('hidden'); answerEl.innerHTML=''; metaEl.innerHTML='';
+  sourcesEl.innerHTML=''; statusEl.textContent='';
+  document.querySelectorAll('h2.sec').forEach(e=>e.remove());
+}
+function setMode(find){
+  tabFind.classList.toggle('active', find); tabSearch.classList.toggle('active', !find);
+  discoverPanel.classList.toggle('hidden', !find);
+  form.classList.toggle('hidden', find); searchOpts.classList.toggle('hidden', find);
+  clearOutput();
+  (find ? $('#dSurname') : input).focus();
+}
+tabSearch.addEventListener('click', () => setMode(false));
+tabFind.addEventListener('click', () => setMode(true));
+
+// ---- targeted person lookup → POST /v1/discover/entity --------------------
+function chip(t, cls){ return `<span class="badge ${cls||''}">${esc(t)}</span>`; }
+
+$('#findGo').addEventListener('click', runDiscover);
+discoverPanel.addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); runDiscover(); } });
+
+async function runDiscover(){
+  const surname = $('#dSurname').value.trim(), given = $('#dGiven').value.trim();
+  if(!surname && !given){ statusEl.textContent = 'Enter at least a surname.'; return; }
+  const attrs = {}; const add = (id,k) => { const v = $(id).value.trim(); if(v) attrs[k]=v; };
+  add('#dCity','city'); add('#dSchool','school'); add('#dEmployer','employer');
+  const rels = []; const rn = $('#dRelName').value.trim();
+  if(rn) rels.push({ type: $('#dRelType').value, of: rn });
+  const brief = {
+    goal: $('#dGoal').value,
+    subject: { surname, given_name: given || null, known_attributes: attrs, relationships: rels },
+    constraints: { platforms: ['open_web'], budget: { max_hops: 4, max_fetches: 200, max_wall_s: 900 } },
+    discover: $('#dLive').checked,
+  };
+  const btn = $('#findGo'); btn.disabled = true; clearOutput();
+  statusEl.innerHTML = '<span class="dot"></span>Searching corpus &amp; live web…';
+  let data;
+  try {
+    const r = await fetch('/v1/discover/entity', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(brief) });
+    data = await r.json();
+  } catch(e){ statusEl.textContent = 'Request failed: ' + e; btn.disabled=false; return; }
+  btn.disabled = false;
+  renderDiscovery(data);
+}
+
+function renderDiscovery(d){
+  statusEl.textContent = '';
+  if(d && d.error){ statusEl.textContent = 'Error: ' + d.error; return; }
+  const st = (d && d.status) || 'no_match', stats = (d && d.stats) || {};
+  const h = document.createElement('h2'); h.className = 'sec'; h.textContent = 'Result — ' + st; sourcesEl.before(h);
+  const head = document.createElement('div'); head.className = 'meta';
+  head.innerHTML = chip('status: ' + st, st==='resolved' ? '' : 'warn')
+    + chip((stats.hops||0) + ' hops') + chip((stats.fetches||0) + ' fetches')
+    + (stats.elapsed_s!=null ? chip(stats.elapsed_s + 's') : '');
+  sourcesEl.appendChild(head);
+
+  const cands = (d && d.candidates) || [];
+  if(!cands.length){
+    const p = document.createElement('div'); p.className = 'status';
+    p.textContent = 'No candidates found within budget.'; sourcesEl.appendChild(p); return;
+  }
+  const bestUrl = d.best ? d.best.source_url : null;
+  cands.forEach((c, i) => {
+    const div = document.createElement('div');
+    div.className = 'src cand' + (bestUrl && c.source_url===bestUrl ? ' best' : '');
+    const sigs = Object.entries(c.signals||{}).map(([k,v]) => chip(k + ' ' + v, 'sig')).join('');
+    const attrs = Object.entries(c.attributes||{}).map(([k,v]) => chip(k + ': ' + v)).join('');
+    const co = (c.co_mentions||[]).length ? `<div class="url">seen with: ${esc(c.co_mentions.join(', '))}</div>` : '';
+    div.innerHTML = `<span class="n">${i+1}</span>`
+      + `<a class="title" href="${esc(c.source_url)}" target="_blank" rel="noopener">${esc(c.name || c.handle || c.source_url)}</a>`
+      + (c.handle ? ` <span class="hand">${esc(c.handle)}</span>` : '')
+      + ` <span class="badge">score ${c.score}</span>`
+      + `<div class="url">${esc(c.source_url)}</div>`
+      + co
+      + ((sigs||attrs) ? `<div class="meta">${sigs}${attrs}</div>` : '');
+    sourcesEl.appendChild(div);
+  });
+}
 </script>
 </body>
 </html>

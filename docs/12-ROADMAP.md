@@ -199,7 +199,7 @@ operational runbooks + backups tested.
 
 **Exit criteria:** a client can self-serve search with cited answers and see coverage.
 
-## Phase 6 — Agentic entity discovery  🔨 in progress
+## Phase 6 — Agentic entity discovery  🔨 feature-complete (hardening left)
 
 **Goal:** targeted, multi-hop lookups for ultra-specific needles — *"find the social handle of a
 person given a surname + school + a mutual friend"* — that a single breadth fan-out can't reach.
@@ -219,7 +219,12 @@ framework (CLAUDE.md rule 2). Only the orchestration + entity-resolution intelli
   (`with_attribute`/`with_handle`, first-write-wins).
 - [x] **`POST /v1/discover/entity`** endpoint (`ai/app/main.py` + schemas) — brief in →
   `DiscoveryResult` out (ranked candidates + per-signal evidence + stats); rejects a brief with no
-  name/handle. A "targeted lookup" UI form still to come.
+  name/handle.
+- [x] **"Find a person" UI** (`ai/app/static/index.html`) — a mode tab on the self-hosted UI: brief
+  inputs (surname/given/goal/city/school/employer + a related-person relationship + live-discovery
+  toggle) → `POST /v1/discover/entity` → ranked candidate cards (name/handle, score, per-signal
+  evidence chips, attributes, co-mentions, source link), best highlighted, with status/hops/fetches
+  stats. Verified end-to-end in a real browser (form → endpoint → rendered result, console clean).
 - [x] **Query generation** from attributes (`ai/app/entity_queries.py`) — the deterministic,
   attribute-anchored backbone (name × discriminator/relationship dorks, platform-scoped `site:`
   variants, ranked most-specific-first, §5 guardrail — every query carries ≥1 discriminator, a bare
@@ -243,7 +248,8 @@ framework (CLAUDE.md rule 2). Only the orchestration + entity-resolution intelli
   the self-hosted metasearch JSON API and extracts result snippets inline — reaching pages **not yet
   indexed**, the core recall lever; no key, degrades to []). The endpoint enables live discovery when
   reachable (request `discover` flag). Deeper full-page fetch of discovered URLs is a later refinement.
-- [ ] Per-run **lead frontier** (isolated, resumable) + explicit budget (`max_hops/fetches/wall_s`).
+- [~] Per-run **budget** (`max_hops/fetches/wall_s`) enforced in the loop ✅; a persisted, resumable
+  per-run lead frontier (so a long run survives a restart) is a later refinement.
 - [x] **Resolution eval** (`ai/eval/resolution_eval.py` + `resolution_cases.jsonl`) — runs the real
   loop over labeled synthetic corpora (target + distractors + noise) and reports resolution accuracy
   / recall / resolved-rate / avg hops+fetches; **offline** (no stack), gated in CI by

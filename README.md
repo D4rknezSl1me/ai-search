@@ -132,9 +132,12 @@ docker run --rm --network ai-search_default -v "$PWD/ai/eval:/eval" -w /eval \
   ordering); query-time near-duplicate dedup (shingle-Jaccard, frees source slots for distinct info)
 - [ ] **Phase 5 — Web UI** (in progress) — self-hosted search UI at `http://localhost:8000/`:
   streamed cited answers, clickable citation chips, source cards, confidence/coverage/degradation
-- [ ] **Phase 6 — Agentic entity discovery** (designed) — targeted multi-hop lookups for
+- [~] **Phase 6 — Agentic entity discovery** (feature-complete) — targeted multi-hop lookups for
   ultra-specific needles (find a person from a surname + school + a mutual friend): a local-LLM
-  plan→act→observe loop that sequences the existing crawl/discovery/social tools and resolves which
-  candidate is actually the target (see [docs/15-DISCOVERY-AGENT.md](docs/15-DISCOVERY-AGENT.md))
+  plan→act→observe→refine loop (`ai/app/entity_*.py`) that generates attribute-anchored queries,
+  searches the indexed corpus **+ live SearXNG**, extracts candidates, and resolves which one is the
+  target (relationship-weighted, accent-tolerant), returning ranked candidates with per-signal
+  evidence via `POST /v1/discover/entity` and a "Find a person" UI. Offline resolution eval gates
+  precision (5/5, accuracy=recall=1.0). See [docs/15-DISCOVERY-AGENT.md](docs/15-DISCOVERY-AGENT.md)
 
 See [docs/12-ROADMAP.md](docs/12-ROADMAP.md) for details.
