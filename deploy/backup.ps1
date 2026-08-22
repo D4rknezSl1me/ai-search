@@ -24,14 +24,16 @@ param(
   [switch]$IncludeExtras
 )
 
-$ErrorActionPreference = "Stop"
+# NB: do NOT set $ErrorActionPreference='Stop' — under PS 5.1 that turns a native
+# exe's stderr (docker prints context/warnings there) into a terminating error even
+# on exit 0. We drive docker directly and gate on $LASTEXITCODE instead.
 $project = "ai-search"                       # docker compose project name (volumes are <project>_<vol>)
 $compose = @("compose", "--env-file", (Join-Path $PSScriptRoot "..\.env"), "-f", (Join-Path $PSScriptRoot "docker-compose.yml"))
 
 function Fail($msg) { Write-Error $msg; exit 1 }
 
 # --- preflight ---------------------------------------------------------------
-try { docker info | Out-Null } catch { Fail "Docker is not available/running." }
+docker info 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail "Docker is not available/running." }
 
 # Read Postgres creds from .env (fall back to compose defaults).
@@ -45,9 +47,8 @@ if (Test-Path $envFile) {
 }
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$dest = Join-Path (Resolve-Path $BackupRoot -ErrorAction SilentlyContinue).Path $stamp 2>$null
-if (-not $dest) { $dest = Join-Path $BackupRoot $stamp }
-New-Item -ItemType Directory -Force -Path $dest | Out-Null
+$dest = Join-Path $BackupRoot $stamp
+New-Item -ItemType Directory -Force -Path $dest | Out-Null   # -Force creates parents too
 $destAbs = (Resolve-Path $dest).Path
 Write-Host "Backing up to $destAbs"
 

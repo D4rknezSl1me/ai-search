@@ -23,9 +23,12 @@ _AGE_KEYS = ("birth_year", "approx_age")
 _WINDOW = 220                 # chars of context scanned around a name mention
 
 # A Capitalized word run (2–4 tokens): "Giulia Rossi", "G. Rossi", "Liceo Volta".
-# Latin-1 uppercase incl. accents, skipping × (0xD7).
+# Latin-1 uppercase incl. accents, skipping × (0xD7). The inter-token separator is
+# horizontal whitespace only ([^\S\r\n]) so a "name" never bridges a line break —
+# otherwise a heading like "Ada Lovelace\nThe Right Honourable…" is captured as one
+# bogus name (caught in live verification).
 _CAP = r"[A-ZÀ-ÖØ-Þ]"
-_NAME_SEQ = re.compile(rf"{_CAP}[\w'’.-]*(?:\s+{_CAP}[\w'’.-]*){{0,3}}", re.UNICODE)
+_NAME_SEQ = re.compile(rf"{_CAP}[\w'’.-]*(?:[^\S\r\n]+{_CAP}[\w'’.-]*){{0,3}}", re.UNICODE)
 _HANDLE = re.compile(r"@([A-Za-z0-9_.]{2,30})")
 _YEAR = re.compile(r"\b(19\d{2}|20\d{2})\b")
 

@@ -197,7 +197,8 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
 - [~] Backups, runbooks, capacity planning; quantize vectors for density. **Backup script + restore
   runbook done** (`deploy/backup.ps1` → timestamped local backups: hot `pg_dump` + volume tars of
   Qdrant/OpenSearch/MinIO, `-Cold`/`-IncludeExtras` options; restore steps in
-  [10-OPERATIONS §6](10-OPERATIONS.md)). **Vector quantization done** (`indexes.qdrant_collection_body`
+  [10-OPERATIONS §6](10-OPERATIONS.md); **live-verified** — produced a real `pg_dump` + volume tars,
+  exit 0). **Vector quantization done** (`indexes.qdrant_collection_body`
   + `QDRANT_QUANTIZATION`): config-gated scalar int8 quantization (~4x-smaller RAM vectors, originals
   kept for rescoring) on new collections. **Capacity-planning notes done** ([10-OPERATIONS
   §10](10-OPERATIONS.md): per-doc footprint, 1M/10M-doc disk+RAM checkpoints, RTX 5070 VRAM budget,
@@ -231,7 +232,13 @@ operational runbooks + backups tested.
 
 **Exit criteria:** a client can self-serve search with cited answers and see coverage.
 
-## Phase 6 — Agentic entity discovery  🔨 feature-complete (hardening left)
+## Phase 6 — Agentic entity discovery  ✅ done (verified live)
+
+**Live-verified (2026-08-22):** `POST /v1/discover/entity` resolved "Ada Lovelace" from a
+surname + profession + her `child_of:Byron` relationship over a real indexed corpus (full pipeline
+up), learning her given name mid-loop; `discover:true` additionally reached un-indexed pages via live
+SearXNG. See `docs/PROGRESS.md`.
+
 
 **Goal:** targeted, multi-hop lookups for ultra-specific needles — *"find the social handle of a
 person given a surname + school + a mutual friend"* — that a single breadth fan-out can't reach.

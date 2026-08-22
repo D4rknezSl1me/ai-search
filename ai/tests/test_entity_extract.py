@@ -32,6 +32,17 @@ def test_ignores_capitalized_noise_without_the_anchor():
     assert extract_candidates(b, text=text) == []   # no "Rossi" anywhere
 
 
+def test_name_does_not_span_line_breaks():
+    # A heading followed by more capitalized text on the next line must not merge
+    # into one bogus name (regression from live verification).
+    b = _brief(surname="Lovelace")
+    text = "Ada Lovelace\nThe Right Honourable Countess of Lovelace was a mathematician."
+    cands = extract_candidates(b, text=text)
+    assert cands
+    assert "\n" not in cands[0].name
+    assert cands[0].name == "Ada Lovelace"
+
+
 def test_title_is_scanned_too():
     b = _brief(surname="Rossi")
     cands = extract_candidates(b, text="body text", title="Giulia Rossi — profile")

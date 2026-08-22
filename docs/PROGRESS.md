@@ -43,6 +43,49 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — LIVE VERIFICATION: Phase 6 end-to-end + SearXNG + backups (owner brought the stack up)
+
+The owner started the full Docker stack (all datastores + TEI + reranker + Ollama + SearXNG). Ran
+the deferred live checks against real data; **all passed**, and live testing surfaced + fixed two
+real bugs.
+
+**1. Phase 6 discovery end-to-end (the crown-jewel verification).** Rebuilt `ai-api` from current
+source (the running image predated Phase 6 → route was 404 until rebuilt — noted for ops).
+`POST /v1/discover/entity` with brief `{surname:"Lovelace", profession:"mathematician",
+child_of:"Byron"}` over the existing 100-doc / 626-chunk corpus (readyz: qdrant+opensearch+tei+
+reranker+llm all **ok** — full pipeline) → **`status: resolved`**, and the loop **enriched the brief
+live**, learning `given_name: "Ada"` from the corpus. Five candidates across five independent real
+sources (history-computer, famous-mathematicians, biography.com, en.wikipedia, bodleian), each with
+the **relationship signal firing** (co-mentions "Lord George Gordon Byron" / "Augusta Ada Byron" /
+"Lord Byron") + profession corroboration, and a per-signal evidence trail. Proof the whole
+plan→act→observe→refine loop works on real data.
+
+**2. Live SearXNG discovery (reach un-indexed pages).** Same brief with `discover:true` → candidates
+now include domains **not in the indexed corpus** (`it.wikipedia.org`,
+`mathshistory.st-andrews.ac.uk`, `www.mpg.de`), i.e. the live-metasearch source pulled fresh pages
+and extracted candidates inline. The "find everything, including un-indexed" lever works live.
+
+**3. Backup script live.** `deploy/backup.ps1` ran against the real datastores → produced
+`postgres.dump` (661 KB logical) + volume tars (pgdata 16 MB, qdrant 6.8 MB, osdata, miniodata) +
+manifest, exit 0.
+
+**Bugs found & fixed via live testing:**
+- **Extraction spanned line breaks** — candidate names like `"Ada Lovelace\nThe Right Honourable…"`
+  because `_NAME_SEQ` used `\s+` (matches newlines). Fixed to `[^\S\r\n]+` (horizontal whitespace
+  only); names are now single-line (`"Ada Lovelace"`). Regression test added; re-verified live.
+- **`backup.ps1` preflight false-failed** — `$ErrorActionPreference='Stop'` + `docker info` stderr =
+  spurious terminating error under PS 5.1 (a trap my offline `ParseFile` syntax check couldn't
+  catch). Removed the global Stop, gate on `$LASTEXITCODE`; also fixed a `Resolve-Path`-before-exists
+  on the backup dir. Re-ran → clean, exit 0.
+
+**Verification** — `ai/` offline suite **201 pass** (200 + the new extraction regression test); both
+live discovery calls resolved; backup produced real artifacts. Deferred items from earlier entries
+(Phase 6 live e2e, live SearXNG, backup live-run) are now **verified**. Not tested: a *destructive*
+full restore (left to the owner per the runbook) and a quantized collection (payload unit-tested;
+flag off by default).
+
+---
+
 ## 2026-08-22 — Phase 4: capacity-planning notes (closes the ops bundle)
 
 **What** — Expanded `docs/10-OPERATIONS.md` §10 from a stub into concrete capacity math for this
