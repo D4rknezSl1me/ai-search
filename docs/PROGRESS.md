@@ -43,6 +43,39 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Deep code review (all languages) — 1 real bug fixed, everything else green
+
+Full review of the codebase for correctness + improvements, across all three languages.
+
+**Automated static analysis + tests**
+- **Python (`ai/`)**: `py_compile` all modules OK; `ruff` (F/B/C4/SIM/RUF) clean on the session's code
+  after fixes; **203 tests pass**.
+- **Go (`crawler/`)**: `go build ./...` + `go vet ./...` clean; **all 13 test packages pass** (api,
+  crawl, extract, fetch, feeds, freshness, metasearch, render, simhash, sitemap, social, urlx,
+  commoncrawl).
+- **TypeScript (`browser-worker/`)**: `tsc --noEmit` clean; **21 tests pass**.
+- Config: `alerts.yml` / `prometheus.yml` parse; `backup.ps1` runs to exit 0 live.
+
+**Bug found & fixed (manual review):** `entity_extract._handle_from_url` used `lstrip("u/")`, which
+strips leading `u`/`/` *characters* rather than a prefix — mangling **any** profile handle starting
+with `u` (`instagram.com/user123` → `@ser123`). Fixed to proper prefix handling + correct reddit
+`/u/`·`/user/` (and skip `/r/` subreddits); 2 regression tests. Also removed 2 unused imports.
+
+**Reviewed-and-correct** (no change needed): filter-derivation is placed before the retrieval cache
+key and uses a non-mutating `replace` (no caller side-effects); auth rate-limiter/usage buckets are
+bounded by the configured key set (no unbounded growth); the orchestrator's budget/stop conditions
+and `replace`-based brief enrichment are sound; no other `lstrip/strip`-multichar misuse exists.
+
+**Noted for later (not bugs, deliberately unchanged):** `_age_match` compares whatever age key is
+present (an `approx_age`-vs-`birth_year` unit mismatch simply fails to corroborate — never a false
+positive); some stored text shows mojibake (`â€™`) from upstream crawler text-encoding, not the
+entity code; a repo `ruff` config could lock in lint hygiene (ran ad-hoc, not committed).
+
+**Verdict:** the system is correct and working across all planes — one genuine bug fixed, full test
+suites green in Python/Go/TS, and the live end-to-end + eval verification (below) all pass.
+
+---
+
 ## 2026-08-22 — LIVE VERIFICATION: Phase 6 end-to-end + SearXNG + backups (owner brought the stack up)
 
 The owner started the full Docker stack (all datastores + TEI + reranker + Ollama + SearXNG). Ran
