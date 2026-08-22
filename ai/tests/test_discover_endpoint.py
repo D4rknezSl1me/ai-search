@@ -52,6 +52,7 @@ def test_endpoint_resolves_and_shapes_payload(monkeypatch):
 
     monkeypatch.setattr(main, "retrieve", fake_retrieve)
     monkeypatch.setattr(clients, "llm_available", _no_llm)  # deterministic planner
+    monkeypatch.setattr(main, "_searxng_available", _no_llm)  # indexed corpus only
 
     req = DiscoverEntityRequest(
         goal="social_handle",

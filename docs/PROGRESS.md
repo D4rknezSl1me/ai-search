@@ -43,6 +43,38 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 6: live-discovery search source (reach pages not yet indexed)
+
+**What** — Generalized the ACT step to union multiple doc sources and added live discovery:
+- `entity_search.make_search(brief, *sources)` — queries every injected source, unions the docs
+  (dedup by URL), extracts candidates from each; a failing source is skipped (recall-first — one
+  dead source never blanks a hop). `make_retrieval_search` kept as the single-source alias.
+- `make_searxng_discover(base, http_get)` — a live-discovery source: queries the self-hosted
+  **SearXNG** JSON API (`/search?format=json`, no key — CLAUDE.md rule 2) and returns result
+  snippets as docs, so a lookup reaches pages **not yet in the index** — the core "find everything"
+  lever that the retrieval-backed source alone can't provide. Degrades to `[]` on any error.
+- `POST /v1/discover/entity` now unions the indexed-corpus retrieval with live SearXNG discovery when
+  the instance is reachable (`_searxng_available`) and the request `discover` flag is set (default
+  on). New config `searxng_url` / `discover_searxng_max_urls` (reads the existing `SEARXNG_URL` env).
+
+**Why** — Until now a targeted lookup could only resolve what the crawler had already ingested; the
+whole point of the product is surfacing the obscure page nobody indexed yet. Sourcing candidates from
+metasearch snippets inline closes that gap immediately, and because sources are unioned, the indexed
+corpus and the live web reinforce each other. Injected `http_get` keeps it offline-testable and the
+self-hosted-only rule intact (no paid search API).
+
+**Verification** — 4 new tests in `tests/test_entity_search.py` (multi-source union + URL dedupe,
+failing-source skip, SearXNG JSON parse + empty-URL drop, error degradation) and the endpoint test
+patched to stay offline. `ai/` offline suite **168 pass** (164 → 168); `app.main` imports with the
+route intact. Live SearXNG run deferred to a stack-up session. Roadmap Phase 6 search adapter → `[x]`;
+`docs/13-API.md` documents the `discover` flag.
+
+**Next** — the remaining Phase 6 item: a "targeted lookup" UI form (brief inputs → `/v1/discover/
+entity` → ranked candidates with evidence). Optional later: full-page fetch of discovered URLs
+(beyond snippets) + enqueuing them to the crawler for permanent indexing.
+
+---
+
 ## 2026-08-22 — Phase 6: resolution eval (measure whether the loop finds the *right* person)
 
 **What** — `ai/eval/resolution_eval.py` + `ai/eval/resolution_cases.jsonl`: an **offline** eval for

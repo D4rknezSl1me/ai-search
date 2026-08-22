@@ -67,6 +67,7 @@ class DiscoverEntityRequest(BaseModel):
     goal: str = "any_info"        # social_handle | real_name | contact | photos | any_info
     subject: DiscoverSubject = Field(default_factory=DiscoverSubject)
     constraints: DiscoverConstraints = Field(default_factory=DiscoverConstraints)
+    discover: bool = True         # also query live SearXNG (reach un-indexed pages)
     max_candidates: int = 20      # retrieval breadth per planned query
     max_results: int = 10         # ranked candidates returned
 

@@ -8,7 +8,8 @@ from dataclasses import dataclass
 
 from app.entity_brief import Budget, Relationship, TargetBrief
 from app.entity_orchestrator import RunConfig, discover_entity
-from app.entity_search import make_retrieval_search
+from app.entity_queries import generate_queries
+from app.entity_search import make_search, make_retrieval_search, make_searxng_discover
 
 
 @dataclass
@@ -73,6 +74,56 @@ def test_end_to_end_resolves_target_over_fake_corpus():
         or "relationship" in res.best.match.signals
     # The target (with the sibling tie + school) outranks the Milano distractor.
     assert res.best.candidate.source_url == "https://news.local/giulia"
+
+
+# -------------------------------------------------- multi-source union / searxng ---
+
+def test_make_search_unions_sources_and_dedupes_by_url():
+    b = TargetBrief(surname="Rossi", known_attributes={"city": "Como"})
+    # Same URL from two sources → extracted once; distinct URL → also included.
+    src_a = _corpus_retrieve([(lambda q: True, Doc(text="Giulia Rossi, Como.", url="u1"))])
+    src_b = _corpus_retrieve([
+        (lambda q: True, Doc(text="Giulia Rossi, Como.", url="u1")),   # dup URL
+        (lambda q: True, Doc(text="Anna Rossi, Como.", url="u2")),
+    ])
+    search = make_search(b, src_a, src_b)
+    q = generate_queries(b)[0]
+    cands = asyncio.run(search(q))
+    urls = sorted({c.source_url for c in cands})
+    assert urls == ["u1", "u2"]
+
+
+def test_make_search_skips_a_failing_source():
+    b = TargetBrief(surname="Rossi", known_attributes={"city": "Como"})
+    async def broken(query):
+        raise RuntimeError("source down")
+    good = _corpus_retrieve([(lambda q: True, Doc(text="Giulia Rossi, Como.", url="u1"))])
+    search = make_search(b, broken, good)
+    cands = asyncio.run(search(generate_queries(b)[0]))
+    assert cands and cands[0].source_url == "u1"   # the dead source didn't blank it
+
+
+def test_searxng_discover_parses_results():
+    class _Resp:
+        def json(self):
+            return {"results": [
+                {"url": "https://a/1", "title": "Giulia Rossi", "content": "Como snippet"},
+                {"url": "", "title": "skip", "content": "no url"},   # dropped
+            ]}
+    async def http_get(url, **kw):
+        assert "format=json" in url or kw.get("params", {}).get("format") == "json"
+        return _Resp()
+    discover = make_searxng_discover("http://searxng:8080/", http_get, max_urls=5)
+    docs = asyncio.run(discover("Rossi Como"))
+    assert len(docs) == 1
+    assert docs[0].url == "https://a/1" and docs[0].text == "Como snippet"
+
+
+def test_searxng_discover_degrades_on_error():
+    async def http_get(url, **kw):
+        raise RuntimeError("searxng down")
+    discover = make_searxng_discover("http://searxng:8080", http_get)
+    assert asyncio.run(discover("q")) == []
 
 
 def test_end_to_end_no_match_returns_gracefully():

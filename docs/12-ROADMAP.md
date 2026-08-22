@@ -237,9 +237,12 @@ framework (CLAUDE.md rule 2). Only the orchestration + entity-resolution intelli
 - [x] **Candidate extraction** (`ai/app/entity_extract.py`) — deterministic pass that turns a
   document into `Candidate`s anchored on the brief's name (nearby attribute corroboration,
   co-mentions, handle from URL/@mention). LLM-assisted "read" is a later refinement.
-- [~] **Search adapter** (`ai/app/entity_search.py`) — **retrieval-backed** ACT step done (each
-  query → hybrid retrieval over the indexed corpus → extract candidates). A **live-discovery**
-  adapter (`POST /internal/discover` → crawl new URLs → extract) for pages not yet indexed is next.
+- [x] **Search adapter** (`ai/app/entity_search.py`) — `make_search` unions any number of doc
+  sources (dedup by URL) and extracts candidates. Two sources wired: **retrieval-backed** (hybrid
+  retrieval over the indexed corpus) and **live SearXNG discovery** (`make_searxng_discover` queries
+  the self-hosted metasearch JSON API and extracts result snippets inline — reaching pages **not yet
+  indexed**, the core recall lever; no key, degrades to []). The endpoint enables live discovery when
+  reachable (request `discover` flag). Deeper full-page fetch of discovered URLs is a later refinement.
 - [ ] Per-run **lead frontier** (isolated, resumable) + explicit budget (`max_hops/fetches/wall_s`).
 - [x] **Resolution eval** (`ai/eval/resolution_eval.py` + `resolution_cases.jsonl`) — runs the real
   loop over labeled synthetic corpora (target + distractors + noise) and reports resolution accuracy

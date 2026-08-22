@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     llm_port: int = 11434
     llm_model: str = "llama3.1:8b"
 
+    # --- Self-hosted metasearch (SearXNG) for live entity discovery (no key) ---
+    searxng_url: str = "http://searxng:8080"
+    discover_searxng_max_urls: int = 10   # result snippets pulled per query
+
     # --- Postgres (document metadata; source of un-indexed docs) ---
     postgres_host: str = "postgres"
     postgres_port: int = 5432

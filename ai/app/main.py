@@ -29,7 +29,7 @@ from . import synthesis
 from .entity_brief import TargetBrief
 from .entity_orchestrator import discover_entity
 from .entity_planner import make_llm_planner
-from .entity_search import make_retrieval_search
+from .entity_search import make_search, make_searxng_discover
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("ai-api")
@@ -363,14 +363,33 @@ async def v1_discover_entity(req: DiscoverEntityRequest) -> JSONResponse:
         result = await retrieve(query, Filters(), max_sources=req.max_candidates, expand=False)
         return result.candidates
 
+    # Sources: always the indexed corpus; add live SearXNG discovery (pages not yet
+    # indexed — the core recall lever) when requested and the instance is reachable.
+    sources = [retrieve_fn]
+    if req.discover and await _searxng_available():
+        sources.append(make_searxng_discover(
+            settings.searxng_url,
+            lambda url, **kw: clients.http().get(url, **kw),
+            max_urls=settings.discover_searxng_max_urls,
+        ))
+
     # PLAN: use the local LLM as the reasoner when it's up, else the deterministic
     # query generation (make_llm_planner degrades on its own too — recall-first).
     llm = _planner_llm if await clients.llm_available() else None
     plan = make_llm_planner(llm)
 
-    search = make_retrieval_search(brief, retrieve_fn)
+    search = make_search(brief, *sources)
     result = await discover_entity(brief, search, plan=plan)
     return JSONResponse(_discovery_payload(result, req.max_results))
+
+
+async def _searxng_available() -> bool:
+    try:
+        resp = await clients.http().get(
+            f"{settings.searxng_url}/healthz", timeout=httpx.Timeout(2.0))
+        return resp.status_code < 500
+    except Exception:
+        return False
 
 
 async def _planner_llm(messages: list[dict[str, str]], temperature: float) -> str:

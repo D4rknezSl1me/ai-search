@@ -66,13 +66,16 @@ Targeted, multi-hop lookup for an ultra-specific entity (Phase 6 — see
     "platforms": ["instagram", "open_web"],
     "budget": { "max_hops": 4, "max_fetches": 200, "max_wall_s": 900 }
   },
+  "discover": true,                      // also query live SearXNG (reach un-indexed pages)
   "max_candidates": 20,                  // retrieval breadth per planned query
   "max_results": 10                      // ranked candidates returned
 }
 ```
 
-Runs the plan→act→observe→refine loop (attribute-anchored queries → hybrid retrieval → candidate
-extraction → resolution scoring → brief enrichment), bounded by the budget. Returns:
+Runs the plan→act→observe→refine loop (attribute-anchored queries → indexed-corpus retrieval **+
+live SearXNG discovery** → candidate extraction → resolution scoring → brief enrichment), bounded by
+the budget. With `discover:true` (default) it also reaches pages not yet indexed via the self-hosted
+metasearch. Returns:
 
 ```jsonc
 {
