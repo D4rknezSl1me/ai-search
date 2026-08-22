@@ -69,6 +69,17 @@ and extracted candidates inline. The "find everything, including un-indexed" lev
 `postgres.dump` (661 KB logical) + volume tars (pgdata 16 MB, qdrant 6.8 MB, osdata, miniodata) +
 manifest, exit 0.
 
+**4. Phase 2 cited-synthesis loop (regression after this session's retrieval-path changes).**
+`POST /v1/search "Who was Ada Lovelace…"` (synthesize) → **`mode:synthesize, confidence 0.865,
+degraded:{vector:false,reranker:false,llm:false}`** (full pipeline, no degradation), a grounded
+6-citation answer. The query-understanding/filter-derivation/intent/freshness/dedup/cache changes
+didn't regress the answer path.
+
+**5. Eval harness live** (`ai/eval/run_eval.py` against the stack, 8 labeled queries):
+**retrieval recall@5/10 = 0.875, nDCG@10 = 0.865, MRR = 0.875** (7/8 perfect; the one miss is a
+corpus-coverage gap — that quote page isn't crawled — not a code issue), **generation
+citation_accuracy = 1.0, 8/8 answered**.
+
 **Bugs found & fixed via live testing:**
 - **Extraction spanned line breaks** — candidate names like `"Ada Lovelace\nThe Right Honourable…"`
   because `_NAME_SEQ` used `\s+` (matches newlines). Fixed to `[^\S\r\n]+` (horizontal whitespace
