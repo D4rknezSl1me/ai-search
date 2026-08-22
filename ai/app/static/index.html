@@ -69,6 +69,15 @@
   .cand.best { border-color: var(--accent); box-shadow: 0 0 0 3px #5eead422; }
   .cand .hand { color: var(--accent2); font-weight: 600; }
   .badge.sig { color: var(--accent); border-color: #2d4b45; }
+  .link { cursor: pointer; user-select: none; }
+  .link:hover { color: var(--text); }
+  .history { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 0; }
+  .history .h { background: var(--panel); border: 1px solid var(--line); color: var(--muted); padding: 5px 11px; border-radius: 999px; font-size: 12.5px; cursor: pointer; }
+  .history .h:hover { color: var(--text); border-color: var(--accent2); }
+  .filters { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 0; }
+  .filters label { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  .filters input { background: var(--panel); border: 1px solid var(--line); color: var(--text); padding: 10px 12px; border-radius: 10px; font-size: 13.5px; outline: none; }
+  .filters input:focus { border-color: var(--accent2); box-shadow: 0 0 0 3px #7c9cff22; }
   footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 50px; }
 </style>
 </head>
@@ -95,7 +104,15 @@
         <option value="auto">auto</option><option value="fresh">fresh</option><option value="any">any</option>
       </select>
     </label>
+    <span class="link" id="filtersToggle">⚙ Filters</span>
   </div>
+  <div id="filters" class="filters hidden">
+    <label>From date (YYYY-MM-DD) <input id="fFrom" type="text" placeholder="2024-01-01" autocomplete="off" /></label>
+    <label>To date (YYYY-MM-DD) <input id="fTo" type="text" placeholder="2025-12-31" autocomplete="off" /></label>
+    <label>Domains (comma-separated) <input id="fDomains" type="text" placeholder="example.com, blog.org" autocomplete="off" /></label>
+    <label>Languages (comma-separated) <input id="fLangs" type="text" placeholder="en, it" autocomplete="off" /></label>
+  </div>
+  <div id="history" class="history"></div>
 
   <div id="discoverPanel" class="hidden">
     <div class="grid">
@@ -187,7 +204,8 @@ async function search(query){
   statusEl.innerHTML = '<span class="dot"></span>Searching…';
   let answer = '', srcHeaderAdded = false, gotToken = false;
 
-  const body = { query, options: { stream:true, synthesize: $('#synth').checked, freshness: $('#fresh').value, max_sources: 8 } };
+  pushHistory(query);
+  const body = { query, filters: collectFilters(), options: { stream:true, synthesize: $('#synth').checked, freshness: $('#fresh').value, max_sources: 8 } };
   let resp;
   try {
     resp = await fetch('/v1/search', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
@@ -235,9 +253,45 @@ function setMode(find){
   tabFind.classList.toggle('active', find); tabSearch.classList.toggle('active', !find);
   discoverPanel.classList.toggle('hidden', !find);
   form.classList.toggle('hidden', find); searchOpts.classList.toggle('hidden', find);
+  // History + filters belong to Search mode only.
+  $('#history').classList.toggle('hidden', find);
+  $('#filters').classList.toggle('hidden', find || !filtersOpen);
   clearOutput();
   (find ? $('#dSurname') : input).focus();
 }
+
+// ---- search filters (wired to /v1/search `filters`) -----------------------
+let filtersOpen = false;
+$('#filtersToggle').addEventListener('click', () => {
+  filtersOpen = !filtersOpen;
+  $('#filters').classList.toggle('hidden', !filtersOpen);
+});
+function collectFilters(){
+  const f = {}, g = id => $(id).value.trim();
+  const csv = id => g(id).split(',').map(s => s.trim()).filter(Boolean);
+  if(g('#fFrom')) f.date_from = g('#fFrom');
+  if(g('#fTo')) f.date_to = g('#fTo');
+  const doms = csv('#fDomains'); if(doms.length) f.domains_include = doms;
+  const langs = csv('#fLangs'); if(langs.length) f.languages = langs;
+  return f;
+}
+
+// ---- recent-search history (client-side, localStorage) --------------------
+const HKEY = 'aisearch_history';
+function getHistory(){ try { return JSON.parse(localStorage.getItem(HKEY)) || []; } catch { return []; } }
+function renderHistory(){
+  const el = $('#history'); el.innerHTML = '';
+  getHistory().forEach(q => {
+    const s = document.createElement('span'); s.className = 'h'; s.textContent = q; s.title = 'Search again';
+    s.addEventListener('click', () => { input.value = q; setMode(false); search(q); });
+    el.appendChild(s);
+  });
+}
+function pushHistory(q){
+  let h = getHistory().filter(x => x !== q); h.unshift(q); h = h.slice(0, 8);
+  localStorage.setItem(HKEY, JSON.stringify(h)); renderHistory();
+}
+renderHistory();
 tabSearch.addEventListener('click', () => setMode(false));
 tabFind.addEventListener('click', () => setMode(true));
 

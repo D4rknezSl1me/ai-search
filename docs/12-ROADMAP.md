@@ -189,11 +189,14 @@ operational runbooks + backups tested.
 
 **Goal:** client-facing product.
 
-- [~] Search UI: query box, streamed answer, source cards, filters/facets, history. **Started:**
+- [x] Search UI: query box, streamed answer, source cards, filters, history.
   `ai/app/static/index.html` served at `GET /` — a no-build single page that streams `/v1/search`
   (SSE), renders the cited answer with clickable `[n]` chips + source cards + confidence/coverage/
-  degradation, with synthesize + freshness controls; verified in a real browser. Filters/facets +
-  history still to come.
+  degradation, synthesize + freshness controls, a **Filters** panel (date range / domains /
+  languages → `/v1/search` `filters`), and **recent-search history** (localStorage chips, click to
+  re-run, persists across reloads). Plus the Phase-6 "Find a person" mode tab. All verified in a real
+  browser (history persists, chip re-runs, console clean). Server-driven facet *counts* are a later
+  add.
 - Coverage/status views; monitoring dashboards for clients.
 - Auth/onboarding; usage/billing views.
 

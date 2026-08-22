@@ -43,6 +43,33 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 5: search UI filters + recent-search history
+
+**What** — Rounded out the Search tab of the self-hosted UI (`ai/app/static/index.html`):
+- **Filters panel** (toggle "⚙ Filters"): date-from/date-to, domains (comma-separated →
+  `domains_include`), languages (comma-separated) — collected into the `/v1/search` request's
+  `filters` object (only non-empty fields sent). Scoped to Search mode.
+- **Recent-search history**: client-side `localStorage` chips under the box (last 8, deduped,
+  most-recent-first); click a chip to repopulate + re-run; persists across reloads. Purely local —
+  no server state, consistent with the self-hosted ethos.
+
+**Why** — The Phase-5 exit criteria call for "query box, streamed answer, source cards,
+filters/facets, history"; the answer/sources were done, this closes the filters + history gap so the
+search page is a complete client surface (alongside the Phase-6 "Find a person" tab).
+
+**Verification** — **Real-browser (Playwright)** against a local `uvicorn app.main:app`: ran two
+searches ("ada lovelace", "grace hopper") → both recorded as history chips (correct order); toggled
+the Filters panel open; **reloaded** → history **persisted** (chips still present); clicked the "ada
+lovelace" chip → it repopulated the box, re-ran the search (rendered the retrieve-only card, correct
+with no datastores), and reordered history to put it first. **Console clean (0 errors).** UI now 19.8
+KB; `app.main` serves it. Offline suite unaffected (**168 pass**). Roadmap Phase 5 search-UI item →
+`[x]`.
+
+**Next** — remaining Phase 5 (coverage/status views; auth/onboarding) and Phase 4 hardening
+(monitoring/alerts, backups/runbooks, NER/media enrichment). Phase 6 stays feature-complete.
+
+---
+
 ## 2026-08-22 — Phase 6: "Find a person" UI (the capstone) — feature-complete
 
 **What** — Added a targeted-lookup mode to the self-hosted UI (`ai/app/static/index.html`), the
