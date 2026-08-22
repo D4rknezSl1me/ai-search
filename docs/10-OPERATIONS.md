@@ -57,20 +57,38 @@ Alertmanager routing for actual paging.
 
 ## 6. Backups & recovery
 
-| Store | Method | Cadence |
-|-------|--------|---------|
-| Postgres | base backup + WAL archiving | nightly + continuous |
-| Qdrant | snapshot API → MinIO | nightly |
-| OpenSearch | snapshot repo → MinIO | nightly |
-| MinIO | versioning + optional offsite | continuous |
+**Implemented (Phase 4):** `deploy/backup.ps1` — one-command self-hosted backup to a timestamped
+folder under `./backups/` (all local; no cloud, CLAUDE.md rule 2):
 
-Recovery is documented in runbooks; test restores quarterly.
+| Store | Method (script) | Notes |
+|-------|-----------------|-------|
+| Postgres | hot logical `pg_dump -Fc` → `postgres.dump` | consistent; restore with `pg_restore` |
+| Postgres (raw) | volume tar `pgdata.tgz` | fallback |
+| Qdrant | volume tar `qdrantdata.tgz` | vectors |
+| OpenSearch | volume tar `osdata.tgz` | lexical index |
+| MinIO | volume tar `miniodata.tgz` | clean-text blobs |
+| Redis/NATS/Prom/Grafana/sessions | volume tar (with `-IncludeExtras`) | rebuildable / optional |
+
+```powershell
+./deploy/backup.ps1                       # hot backup of the data stores
+./deploy/backup.ps1 -Cold -IncludeExtras  # stop stores first (fully consistent) + extras
+```
+
+Run it nightly (Task Scheduler / cron). Restore (see the runbook below): recreate the volumes, untar
+each `*.tgz` back into its volume, and `pg_restore` the dump. Test restores quarterly.
+
+**Restore runbook.** With the stack down: for each store, `docker run --rm -v ai-search_<vol>:/dst
+-v <backupdir>:/backup alpine sh -c "rm -rf /dst/* && tar xzf /backup/<vol>.tgz -C /dst"`; bring the
+stack up; for Postgres prefer the logical dump — `docker exec -i ai-search-postgres-1 pg_restore -U
+<user> -d <db> --clean --if-exists < postgres.dump`. Verify with `/v1/coverage` (doc/chunk counts)
+and a smoke query.
 
 ## 7. Runbooks (index)
 
 - **Restart a plane** without data loss (drain queue, stop consumers, restart).
 - **Reindex** from stored text (re-embed after model change) without re-crawl.
-- **Recover** a downed datastore from snapshot.
+- **Recover** a downed datastore from snapshot (see §6 restore runbook: untar the volume backup /
+  `pg_restore` the dump, then verify via `/v1/coverage`).
 - **Scale** fetchers/embedders (add workers, rebalance).
 - **Repair** a broken social adapter (fixtures, contract tests, redeploy).
 - **Disk pressure** response (extend, tier, prune raw, tighten dedupe).

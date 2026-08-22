@@ -43,6 +43,35 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 4: self-hosted backup script + restore runbook
+
+**What** — `deploy/backup.ps1`: one-command backup of the data-bearing stores to a timestamped
+`./backups/<ts>/` folder (all local, no cloud — CLAUDE.md rule 2):
+- **Postgres** — hot logical `pg_dump -Fc` (`postgres.dump`, restorable via `pg_restore`) plus a raw
+  `pgdata.tgz` fallback.
+- **Qdrant / OpenSearch / MinIO** — tar of each named Docker volume (`qdrantdata`/`osdata`/
+  `miniodata`). `-IncludeExtras` adds redis/sessions/prom/grafana; `-Cold` stops the datastores
+  first for a fully-consistent copy (the pg_dump always runs hot, before any stop). Writes a
+  `MANIFEST.txt` with sizes.
+- `docs/10-OPERATIONS.md` §6 rewritten with the backup table, invocation examples, and a **restore
+  runbook** (untar each volume back / `pg_restore` the dump / verify via `/v1/coverage`); §7 runbook
+  index points at it. `.gitignore` now excludes `/backups/`.
+
+**Why** — This is a long-term single-device project; the crawled+indexed corpus is the accumulated
+value and had no backup path. A self-hosted, dependency-free script (just Docker) makes nightly
+backups a one-liner and restore a documented procedure — the Phase 4 "backups, runbooks" item.
+
+**Verification** — PowerShell **syntax-validated** via the language parser
+(`[Parser]::ParseFile` → 0 errors). A live run against containers is **deferred** (Docker down this
+session); the pg_dump/volume-tar/pg_restore commands are the standard, well-known forms and the
+container/volume names match `deploy/docker-compose.yml` (`ai-search-postgres-1`,
+`ai-search_<vol>`). Offline suite unaffected (**196 pass**). Roadmap Phase 4 backups → `[~]`.
+
+**Next** — capacity planning notes + vector quantization (Qdrant scalar quantization) for density,
+and Phase 5 usage/billing dashboards. Phase 6 feature-complete.
+
+---
+
 ## 2026-08-22 — Phase 5: client API-key onboarding in the UI
 
 **What** — The self-hosted UI (`ai/app/static/index.html`) gains an **API key** field (persisted in

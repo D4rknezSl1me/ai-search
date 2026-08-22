@@ -194,7 +194,11 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
 - [x] **Index reconciliation** (`ai/app/reconcile.py` + `POST /internal/reconcile`): prune chunks
   orphaned in Qdrant/OpenSearch (index ≥ `n_chunks`) so re-indexing to fewer pieces can't leave
   stale results; idempotent, verified live.
-- Backups, runbooks, capacity planning; quantize vectors for density.
+- [~] Backups, runbooks, capacity planning; quantize vectors for density. **Backup script + restore
+  runbook done** (`deploy/backup.ps1` → timestamped local backups: hot `pg_dump` + volume tars of
+  Qdrant/OpenSearch/MinIO, `-Cold`/`-IncludeExtras` options; restore steps in
+  [10-OPERATIONS §6](10-OPERATIONS.md)). Syntax-validated; live run against containers deferred
+  (Docker down this session). Capacity planning + vector quantization still to come.
 
 **Exit criteria:** stable at target scale on current hardware; quality metrics improved vs P2;
 operational runbooks + backups tested.
