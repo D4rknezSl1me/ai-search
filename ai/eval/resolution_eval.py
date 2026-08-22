@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.entity_brief import TargetBrief  # noqa: E402
 from app.entity_orchestrator import discover_entity
-from app.entity_resolve import _norm, _tokens
+from app.entity_resolve import _tokens
 from app.entity_search import make_retrieval_search
 
 

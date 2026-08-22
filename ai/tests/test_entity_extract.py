@@ -79,6 +79,18 @@ def test_handle_from_profile_url():
     assert _handle_from_url("https://example.com/whatever") == ""   # not a profile host
 
 
+def test_handle_from_url_no_u_prefix_corruption():
+    # Regression: a handle starting with 'u' must not be mangled (was lstrip('u/')).
+    assert _handle_from_url("https://instagram.com/user123") == "@user123"
+    assert _handle_from_url("https://twitter.com/underscore") == "@underscore"
+
+
+def test_handle_from_reddit_paths():
+    assert _handle_from_url("https://reddit.com/u/somebody") == "@somebody"
+    assert _handle_from_url("https://www.reddit.com/user/somebody") == "@somebody"
+    assert _handle_from_url("https://reddit.com/r/askreddit") == ""   # subreddit, not a person
+
+
 def test_handle_from_url_attached_to_candidate():
     b = _brief(surname="Rossi")
     cands = extract_candidates(b, text="Profile of Giulia Rossi.",

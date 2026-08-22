@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 
-from app.entity_brief import Budget, Relationship, TargetBrief
+from app.entity_brief import Budget, TargetBrief
 from app.entity_orchestrator import (
     RunConfig,
     discover_entity,

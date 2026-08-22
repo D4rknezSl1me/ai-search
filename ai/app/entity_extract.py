@@ -50,9 +50,19 @@ def _handle_from_url(url: str) -> str:
     host = parts.netloc.lower().removeprefix("www.")
     if host not in _PROFILE_HOSTS:
         return ""
-    seg = parts.path.strip("/").split("/", 1)[0]
-    seg = seg.removeprefix("@").lstrip("u/")  # reddit /u/name, tiktok /@name
-    if seg and re.fullmatch(r"[A-Za-z0-9_.]{2,30}", seg):
+    segs = [s for s in parts.path.split("/") if s]
+    if not segs:
+        return ""
+    seg = segs[0]
+    # Reddit puts the username one segment in: /u/<name>, /user/<name> (and /r/ is
+    # a subreddit, not a person — skip it).
+    if host == "reddit.com":
+        if seg in ("u", "user") and len(segs) > 1:
+            seg = segs[1]
+        elif seg == "r":
+            return ""
+    seg = seg.removeprefix("@")            # tiktok /@name
+    if re.fullmatch(r"[A-Za-z0-9_.]{2,30}", seg):
         return f"@{seg}"
     return ""
 
