@@ -36,6 +36,41 @@ class RetrieveRequest(BaseModel):
     freshness: str = "auto"       # auto | fresh | any — recency weighting
 
 
+class DiscoverRelationship(BaseModel):
+    type: str
+    of: str
+
+
+class DiscoverSubject(BaseModel):
+    surname: str = ""
+    given_name: str | None = None
+    known_attributes: dict[str, str] = Field(default_factory=dict)
+    relationships: list[DiscoverRelationship] = Field(default_factory=list)
+    seed_handles: list[str] = Field(default_factory=list)
+
+
+class DiscoverBudget(BaseModel):
+    max_hops: int = 4
+    max_fetches: int = 200
+    max_wall_s: int = 900
+
+
+class DiscoverConstraints(BaseModel):
+    platforms: list[str] = Field(default_factory=list)
+    budget: DiscoverBudget = Field(default_factory=DiscoverBudget)
+
+
+class DiscoverEntityRequest(BaseModel):
+    """Targeted entity-discovery brief (docs/15 §3). Shaped to feed
+    TargetBrief.from_dict directly via model_dump()."""
+
+    goal: str = "any_info"        # social_handle | real_name | contact | photos | any_info
+    subject: DiscoverSubject = Field(default_factory=DiscoverSubject)
+    constraints: DiscoverConstraints = Field(default_factory=DiscoverConstraints)
+    max_candidates: int = 20      # retrieval breadth per planned query
+    max_results: int = 10         # ranked candidates returned
+
+
 class ResultItem(BaseModel):
     chunk_id: str
     document_id: int

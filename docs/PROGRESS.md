@@ -43,6 +43,45 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 6: wired end-to-end — candidate extraction + search adapter + `POST /v1/discover/entity`
+
+**What** — Closed the loop into a live HTTP endpoint. Three additions:
+- `ai/app/entity_extract.py` — **candidate extraction**: turns a document into `Candidate`s anchored
+  on the brief's name (only Capitalized runs containing the surname/given become candidates, so a
+  page isn't shredded into every phrase), pulling the nearby signals the resolver needs — attribute
+  values that appear in the ±220-char window, co-mentioned names (for relationship resolution), and a
+  handle (from a profile URL host or an `@mention`). Deterministic/stdlib; over-emits and lets the
+  resolver + floor filter (recall-first). LLM-assisted read is a later refinement.
+- `ai/app/entity_search.py` — the concrete **ACT adapter**: `make_retrieval_search(brief, retrieve)`
+  runs each planned query through the existing hybrid retrieval over the **already-indexed corpus**
+  and extracts candidates from the hits. `retrieve` is dependency-injected, so the adapter + the whole
+  orchestrator stay offline-testable; the endpoint supplies the real `app.retrieval.retrieve`.
+- **`POST /v1/discover/entity`** (`ai/app/main.py` + `schemas.py`) — accepts the §3 target brief
+  (`DiscoverEntityRequest`, shaped to feed `TargetBrief.from_dict`), runs `discover_entity`, and
+  returns the ranked candidates with their per-signal evidence + stats. `expand=False` on the inner
+  retrieval (the agent already fans out into many queries). Rejects a brief with no name/handle (400).
+
+**Why** — This is the milestone where Phase 6 stops being modules and becomes a **usable feature**:
+anything the crawler has already ingested is now reachable by a targeted, multi-hop, self-resolving
+lookup over one HTTP call — no new fetch code, no paid dep, LLM-optional. The retrieval-backed
+adapter is the fastest path to value; a live-discovery adapter (crawl URLs not yet indexed) layers on
+next without touching the loop.
+
+**Verification** — 15 new tests: `test_entity_extract.py` (name anchoring, attribute/co-mention/age
+extraction, profile-URL + @mention handles), `test_entity_search.py` (adapter + a **full offline
+end-to-end run**: brief → queries → retrieval-backed search → extract → resolve → refine, where the
+target with the sibling tie + school outranks a same-surname Milano distractor), and
+`test_discover_endpoint.py` (handler wiring with `retrieve` monkeypatched — payload shape + the 400
+guard, no network). `ai/` offline suite **149 pass** (134 → 149); `app.main` imports with
+`/v1/discover/entity` registered (14 routes). Roadmap Phase 6 → 🔨 in progress; brief/endpoint/
+resolver/extractor → `[x]`. `docs/13-API.md` documents the endpoint. **Live** run (against a GPU/
+OpenSearch stack over real indexed data) is deferred to a stack-up session, per the usual pattern.
+
+**Next** — the LLM planner over the deterministic query generation (schema-validated tool actions,
+degrading to the heuristic), then the live-discovery search adapter + a "targeted lookup" UI form.
+
+---
+
 ## 2026-08-22 — Phase 6: orchestrator loop core (plan → act → observe → refine)
 
 **What** — `ai/app/entity_orchestrator.py`, the control flow that ties the three Phase-6 pieces into

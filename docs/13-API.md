@@ -48,6 +48,50 @@ Streaming: `text/event-stream`; events `token`, then `citations`, `meta`, `done`
 Documents only, no synthesis (same request minus synthesis; returns ranked `results[]` with
 chunk text, url, scores). For clients that want raw retrieval.
 
+### `POST /v1/discover/entity`
+Targeted, multi-hop lookup for an ultra-specific entity (Phase 6 — see
+[15-DISCOVERY-AGENT.md](15-DISCOVERY-AGENT.md)). Body is a **target brief**:
+
+```jsonc
+{
+  "goal": "social_handle",              // social_handle | real_name | contact | photos | any_info
+  "subject": {
+    "surname": "Rossi",
+    "given_name": null,                 // null/absent ⇒ the thing to find
+    "known_attributes": { "school": "Liceo Volta", "city": "Como" },
+    "relationships": [ { "type": "sibling_of", "of": "Marco Rossi" } ],
+    "seed_handles": []
+  },
+  "constraints": {
+    "platforms": ["instagram", "open_web"],
+    "budget": { "max_hops": 4, "max_fetches": 200, "max_wall_s": 900 }
+  },
+  "max_candidates": 20,                  // retrieval breadth per planned query
+  "max_results": 10                      // ranked candidates returned
+}
+```
+
+Runs the plan→act→observe→refine loop (attribute-anchored queries → hybrid retrieval → candidate
+extraction → resolution scoring → brief enrichment), bounded by the budget. Returns:
+
+```jsonc
+{
+  "status": "resolved",                 // resolved | candidates | no_match
+  "goal": "social_handle",
+  "subject": { "surname": "Rossi", "given_name": "Giulia", "known_attributes": {…} },
+  "candidates": [ {
+    "name": "Giulia Rossi", "handle": "@giulia.rossi", "platform": "open_web",
+    "score": 0.93, "signals": { "surname": 1.0, "relationship": 1.0, "attr:school": 1.0 },
+    "attributes": {…}, "co_mentions": ["Marco Rossi"], "source_url": "https://…"
+  } ],
+  "best": { "name": "Giulia Rossi", "handle": "@giulia.rossi", "score": 0.93, "source_url": "https://…" },
+  "stats": { "hops": 2, "fetches": 7, "elapsed_s": 1.2 }
+}
+```
+
+A brief with no surname / given_name / seed handle → `400`. Recall-first: returns the best partial
+(`candidates`) rather than nothing when no candidate clears the resolve threshold.
+
 ### `GET /v1/coverage`
 What's indexed: counts by domain/source-type/date, last-crawl times, total docs/chunks.
 

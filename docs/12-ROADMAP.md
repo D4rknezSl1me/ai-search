@@ -199,7 +199,7 @@ operational runbooks + backups tested.
 
 **Exit criteria:** a client can self-serve search with cited answers and see coverage.
 
-## Phase 6 — Agentic entity discovery  📐 designed
+## Phase 6 — Agentic entity discovery  🔨 in progress
 
 **Goal:** targeted, multi-hop lookups for ultra-specific needles — *"find the social handle of a
 person given a surname + school + a mutual friend"* — that a single breadth fan-out can't reach.
@@ -213,23 +213,28 @@ framework (CLAUDE.md rule 2). Only the orchestration + entity-resolution intelli
   refine control flow composing brief+queries+resolve, with the ACT step (search/extract)
   dependency-injected; bounded by the brief's budget (hops/fetches/wall-clock), enriches the brief
   from above-threshold matches, dedupes+ranks candidates, and stops on {confident match, budget,
-  no new leads}. The LLM planner on top + the real `search` adapter (calls `/internal/discover` +
-  fetch + candidate extraction) are next.
-- [~] Structured **target brief** model (`ai/app/entity_brief.py`) — done: tolerant `from_dict`
-  parser (API- or LLM-supplied), attribute/relationship/budget model, and the loop's
-  brief-enrichment merge (`with_attribute`/`with_handle`, first-write-wins). `POST
-  /v1/discover/entity` + a "targeted lookup" UI form still to come.
+  no new leads}. **Wired end-to-end** via `POST /v1/discover/entity`. The LLM planner on top is next.
+- [x] Structured **target brief** model (`ai/app/entity_brief.py`) — tolerant `from_dict` parser
+  (API- or LLM-supplied), attribute/relationship/budget model, and the loop's brief-enrichment merge
+  (`with_attribute`/`with_handle`, first-write-wins).
+- [x] **`POST /v1/discover/entity`** endpoint (`ai/app/main.py` + schemas) — brief in →
+  `DiscoveryResult` out (ranked candidates + per-signal evidence + stats); rejects a brief with no
+  name/handle. A "targeted lookup" UI form still to come.
 - [~] **Query generation** from attributes (`ai/app/entity_queries.py`) — done: the deterministic,
   attribute-anchored backbone (name × discriminator/relationship dorks, platform-scoped `site:`
   variants, ranked most-specific-first, §5 guardrail — every query carries ≥1 discriminator, a bare
-  common surname is never fanned out). This is also the LLM-down fallback; the LLM planner on top +
-  wiring to `POST /internal/discover` + social search are next.
-- [~] **Entity-resolution scorer** (`ai/app/entity_resolve.py`) — done: scores a `Candidate`
+  common surname is never fanned out). This is also the LLM-down fallback; the LLM planner on top is next.
+- [x] **Entity-resolution scorer** (`ai/app/entity_resolve.py`) — scores a `Candidate`
   (name/handle/attributes/co-mentions) against the brief as the *fraction of known signals it
   corroborates* (accent- + spelling-tolerant via stdlib `difflib`/`unicodedata`), with a
   corroborated **relationship** as the heaviest signal, a per-signal breakdown for the evidence
-  trail, and `propose_enrichments` (learned attributes + inferred given name) for the OBSERVE→REFINE
-  feedback. Wiring the extractor (Phase 4 NER + LLM read) that *produces* candidates is next.
+  trail, and `propose_enrichments` (learned attributes + inferred given name) for OBSERVE→REFINE.
+- [x] **Candidate extraction** (`ai/app/entity_extract.py`) — deterministic pass that turns a
+  document into `Candidate`s anchored on the brief's name (nearby attribute corroboration,
+  co-mentions, handle from URL/@mention). LLM-assisted "read" is a later refinement.
+- [~] **Search adapter** (`ai/app/entity_search.py`) — **retrieval-backed** ACT step done (each
+  query → hybrid retrieval over the indexed corpus → extract candidates). A **live-discovery**
+  adapter (`POST /internal/discover` → crawl new URLs → extract) for pages not yet indexed is next.
 - [ ] Per-run **lead frontier** (isolated, resumable) + explicit budget (`max_hops/fetches/wall_s`).
 - [ ] Eval extension: labeled solvable targets → *resolution* precision/recall + "found @ hop-k".
 

@@ -22,8 +22,13 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from . import clients, indexer, indexes, reconcile
 from .config import settings
 from .retrieval import Filters, retrieve
-from .schemas import RetrieveRequest, RetrieveResponse, ResultItem, SearchRequest
+from .schemas import (
+    DiscoverEntityRequest, RetrieveRequest, RetrieveResponse, ResultItem, SearchRequest,
+)
 from . import synthesis
+from .entity_brief import TargetBrief
+from .entity_orchestrator import discover_entity
+from .entity_search import make_retrieval_search
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("ai-api")
@@ -295,6 +300,71 @@ async def _search_sse(req, result, start):
         "degraded": {"vector": not result.vector_ok, "reranker": not result.reranked, "llm": False},
     })
     yield _sse("done", {"ok": True})
+
+
+# --------------------------------------------------- targeted entity discovery ---
+
+def _discovery_payload(result, max_results: int) -> dict:
+    cands = result.candidates[:max_results]
+    return {
+        "status": result.status,
+        "goal": result.brief.goal.value,
+        "subject": {
+            "surname": result.brief.surname,
+            "given_name": result.brief.given_name,
+            "known_attributes": result.brief.known_attributes,
+        },
+        "candidates": [
+            {
+                "name": sc.candidate.name,
+                "handle": sc.candidate.handle,
+                "platform": sc.candidate.platform,
+                "score": sc.score,
+                "signals": sc.match.signals,          # per-signal evidence trail
+                "attributes": sc.candidate.attributes,
+                "co_mentions": sc.candidate.co_mentions,
+                "source_url": sc.candidate.source_url,
+            }
+            for sc in cands
+        ],
+        "best": (
+            {
+                "name": result.best.candidate.name,
+                "handle": result.best.candidate.handle,
+                "score": result.best.score,
+                "source_url": result.best.candidate.source_url,
+            }
+            if result.best else None
+        ),
+        "stats": {"hops": result.hops, "fetches": result.fetches, "elapsed_s": result.elapsed_s},
+    }
+
+
+@app.post("/v1/discover/entity")
+async def v1_discover_entity(req: DiscoverEntityRequest) -> JSONResponse:
+    """Targeted, multi-hop lookup for an ultra-specific entity (docs/15).
+
+    Runs the plan→act→observe→refine loop: attribute-anchored queries → hybrid
+    retrieval over the indexed corpus → candidate extraction → resolution scoring
+    → brief enrichment, bounded by the brief's budget. Returns ranked candidates
+    each with the per-signal evidence for the match.
+    """
+    brief = TargetBrief.from_dict(req.model_dump())
+    if not (brief.surname or brief.given_name or brief.seed_handles):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "brief needs at least a surname, given_name, or seed handle"},
+        )
+
+    async def retrieve_fn(query: str):
+        # expand=False: the agent already fans out into many attribute-anchored
+        # queries, so per-query LLM expansion would multiply calls for no recall.
+        result = await retrieve(query, Filters(), max_sources=req.max_candidates, expand=False)
+        return result.candidates
+
+    search = make_retrieval_search(brief, retrieve_fn)
+    result = await discover_entity(brief, search)
+    return JSONResponse(_discovery_payload(result, req.max_results))
 
 
 # ------------------------------------------------------------------ coverage ---
