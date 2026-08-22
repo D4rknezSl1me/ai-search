@@ -184,11 +184,13 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   `GET /v1/coverage` (resilient) with a UI panel. **Monitoring/alerts ✅** — `deploy/alerts.yml`
   (11 Prometheus rules across service/crawl/pipeline/discovery health, wired via `rule_files` +
   mounted). Alertmanager routing/paging still to come.
-- [~] Auth, API keys, rate limiting, usage metering (multi-tenant readiness). **API-key auth +
-  per-key token-bucket rate limiting done** (`ai/app/auth.py` + a thin `main.py` middleware, gated
-  by `AUTH_ENABLED`, off by default): `/v1/*` requires a known key (`X-API-Key` or `Bearer`) and is
-  rate-limited per key; `/`, health/metrics, and `/internal/*` exempt. Verified live (401/exempt/
-  200). Usage metering + per-tenant quotas still to come.
+- [~] Auth, API keys, rate limiting, usage metering (multi-tenant readiness). **Auth + rate limiting
+  + usage metering done.** API-key auth + per-key token-bucket rate limiting (`ai/app/auth.py` + a
+  thin `main.py` middleware, gated by `AUTH_ENABLED`, off by default): `/v1/*` requires a known key
+  (`X-API-Key` or `Bearer`), rate-limited per key; `/`, health/metrics, `/internal/*` exempt.
+  **Usage metering** (`ai/app/usage.py`): per-key request counts by outcome (ok/unauthorized/
+  rate_limited), hashed key labels (secret-free, bounded cardinality), exposed on `/metrics`
+  (`aisearch_api_requests_total`). All verified live. Per-tenant quotas still to come.
 - [x] **Index reconciliation** (`ai/app/reconcile.py` + `POST /internal/reconcile`): prune chunks
   orphaned in Qdrant/OpenSearch (index ≥ `n_chunks`) so re-indexing to fewer pieces can't leave
   stale results; idempotent, verified live.

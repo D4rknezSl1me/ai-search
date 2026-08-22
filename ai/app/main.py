@@ -17,9 +17,9 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 
-from . import auth, clients, indexer, indexes, reconcile
+from . import auth, clients, indexer, indexes, reconcile, usage
 from .config import settings
 from .retrieval import Filters, retrieve
 from .schemas import (
@@ -60,16 +60,28 @@ app = FastAPI(title="ai-search AI service", version="0.2.0", lifespan=lifespan)
 # decision logic lives in app.auth (pure/testable); this is a thin adapter.
 _auth_cfg = auth.AuthConfig(enabled=settings.auth_enabled, allowed_keys=auth.parse_keys(settings.api_keys))
 _rate_limiter = auth.RateLimiter(settings.rate_limit_per_min)
+_usage = usage.UsageMeter()   # per-key request counters, exposed on /metrics
 
 
 @app.middleware("http")
 async def _auth_middleware(request, call_next):
+    path = request.url.path
+    rejection = None
     if _auth_cfg.enabled:
         key = auth.extract_key(request.headers)
-        rejection = auth.decide(request.url.path, key, cfg=_auth_cfg, limiter=_rate_limiter)
-        if rejection is not None:
-            status, reason = rejection
-            return JSONResponse(status_code=status, content={"error": reason})
+        rejection = auth.decide(path, key, cfg=_auth_cfg, limiter=_rate_limiter)
+    else:
+        key = auth.extract_key(request.headers) if path.startswith("/v1/") else ""
+
+    if path.startswith("/v1/"):
+        # Meter every public-API request (works with auth on or off).
+        outcome = "ok" if rejection is None else ("rate_limited" if rejection[0] == 429 else "unauthorized")
+        label = usage.mask_key(key) if key in _auth_cfg.allowed_keys else "anonymous"
+        _usage.record(label, outcome)
+
+    if rejection is not None:
+        status, reason = rejection
+        return JSONResponse(status_code=status, content={"error": reason})
     return await call_next(request)
 
 
@@ -125,7 +137,7 @@ async def readyz() -> JSONResponse:
     )
 
 
-@app.get("/metrics")
+@app.get("/metrics", response_class=PlainTextResponse)
 async def metrics() -> str:
     try:
         pool = await clients.pg()
@@ -139,6 +151,7 @@ async def metrics() -> str:
         "# ai-search ai-api metrics\n"
         f"aisearch_documents_indexed {indexed}\n"
         f"aisearch_documents_pending {pending}\n"
+        f"{_usage.render()}\n"
     )
 
 

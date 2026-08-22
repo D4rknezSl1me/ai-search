@@ -43,6 +43,34 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 4: per-key usage metering (+ /metrics plain-text fix)
+
+**What** — `ai/app/usage.py` (`UsageMeter` + `mask_key`) counts `/v1/*` requests by key and outcome
+(ok / unauthorized / rate_limited) and renders them for Prometheus. Wired into the auth middleware
+(meters every public-API request, auth on *or* off) and appended to `GET /metrics` as
+`aisearch_api_requests_total{key,outcome}`. Two cardinality/secret safeguards: keys are **hashed** to
+a short label (`k_<8hex>`, raw key never exposed) and any unrecognized key is bucketed as
+`anonymous`.
+- **Bug fix (pre-existing):** `/metrics` returned its body as a JSON-quoted string (escaped `\n`),
+  which Prometheus can't scrape. Switched to `PlainTextResponse` so the endpoint now emits real
+  exposition text (`text/plain`) — the crawler/browser-worker already did this; ai-api now matches.
+
+**Why** — Multi-tenant readiness: metering per-key traffic (and rejections) is how abuse and
+per-client volume become visible, completing the auth/rate-limit/metering trio. And the plain-text
+fix means *all* the ai-api metrics (documents + API usage) are now actually scrapeable — without it
+the new alerts referencing `aisearch_documents_pending` couldn't have read the value.
+
+**Verification** — 4 new tests (`tests/test_usage.py`): key masking (stable, secret-free,
+anonymous), record/total/snapshot, Prometheus render format + determinism, empty-render header-only.
+`ai/` offline suite **196 pass** (192 → 196). **Live** (uvicorn): 3 `/v1/*` calls →
+`aisearch_api_requests_total{key="anonymous",outcome="ok"} 3`; after the fix, `/metrics` returns
+`Content-Type: text/plain` with real newlines. Roadmap Phase 4 auth/metering item updated.
+
+**Next** — remaining Phase 4 hardening (backups/runbooks tested, NER/media enrichment, vector
+quantization) and Phase 5 auth/onboarding UI. Phase 6 feature-complete.
+
+---
+
 ## 2026-08-22 — Phase 4: API-key auth + per-key rate limiting
 
 **What** — `ai/app/auth.py` + a thin `main.py` middleware (config-gated by `AUTH_ENABLED`, off by
