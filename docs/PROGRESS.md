@@ -43,6 +43,40 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 6: orchestrator loop core (plan → act → observe → refine)
+
+**What** — `ai/app/entity_orchestrator.py`, the control flow that ties the three Phase-6 pieces into
+the agent loop (docs/15 §2, §4):
+- `discover_entity(brief, search, *, config, now)` — async loop: **PLAN** `generate_queries(brief)` →
+  **ACT** the injected `search(query) → [Candidate]` → **OBSERVE** `score_candidate` → **REFINE**
+  `brief.with_attribute/with_handle` from above-threshold matches, which reshapes the next hop's
+  queries. The ACT step (really: metasearch/social + fetch + candidate extraction) is
+  **dependency-injected** — same DI style as `understand.py` — so the whole loop is offline-testable.
+- **Bounded** (docs/15 §5): terminates on {confident match ≥ resolve threshold, budget spent, no new
+  leads/fixpoint}. Budget = the brief's `max_hops` / `max_fetches` / `max_wall_s` (clock injected).
+  Candidates are merged by identity (handle, else name+source), keeping the strongest observation,
+  and ranked desc. A failing `search` on one query is swallowed (one bad lead never kills the run).
+- Result: `DiscoveryResult{status: resolved|candidates|no_match, brief (enriched), candidates
+  (ranked ScoredCandidate w/ per-signal evidence), hops, fetches, elapsed_s, best}`.
+
+**Why** — This is the spine of the whole feature: with it, the deterministic backbone already runs a
+real multi-hop lookup end-to-end (find partial → learn a given name/employer → re-query → resolve to
+a handle) — proven in tests — with the only remaining pieces being the LLM planner and the concrete
+`search` adapter. Recall-first stays bounded: the fixpoint + budget guarantee termination and always
+return the best partial rather than nothing.
+
+**Verification** — 10 new tests (`tests/test_entity_orchestrator.py`) covering confident resolve,
+**multi-hop enrichment → resolve**, matched-but-not-resolved (`candidates`), no-match, `max_fetches`
+cap, wall-clock timeout, no-new-leads early stop, dedupe/merge, score-desc ranking, and
+search-exception robustness. `ai/` offline suite **134 pass** (124 → 134), local `pytest` (no
+Docker). Roadmap Phase 6 orchestrator → `[~]`.
+
+**Next** — `POST /v1/discover/entity` (brief in → DiscoveryResult out) wiring the orchestrator with a
+real `search` adapter (Go crawler `/internal/discover` + fetch + candidate extraction), then the LLM
+planner layered over the deterministic query generation.
+
+---
+
 ## 2026-08-22 — Phase 6: entity-resolution scorer (the OBSERVE half — which candidate is the target)
 
 **What** — `ai/app/entity_resolve.py`, the precision crux of the discovery loop (docs/15 §4.2):

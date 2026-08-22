@@ -209,8 +209,12 @@ Approach: a **plan → act → observe → refine** loop with the **local LLM as
 **existing crawler/discovery/social tools as the actor** — no new fetch code, no paid API, no new
 framework (CLAUDE.md rule 2). Only the orchestration + entity-resolution intelligence are net-new.
 
-- [ ] Orchestrator service driving the loop (local LLM emits schema-validated tool actions;
-  degrades to a fixed query-generation heuristic when the LLM is down — recall-first).
+- [~] Orchestrator loop core (`ai/app/entity_orchestrator.py`) — done: the pure plan→act→observe→
+  refine control flow composing brief+queries+resolve, with the ACT step (search/extract)
+  dependency-injected; bounded by the brief's budget (hops/fetches/wall-clock), enriches the brief
+  from above-threshold matches, dedupes+ranks candidates, and stops on {confident match, budget,
+  no new leads}. The LLM planner on top + the real `search` adapter (calls `/internal/discover` +
+  fetch + candidate extraction) are next.
 - [~] Structured **target brief** model (`ai/app/entity_brief.py`) — done: tolerant `from_dict`
   parser (API- or LLM-supplied), attribute/relationship/budget model, and the loop's
   brief-enrichment merge (`with_attribute`/`with_handle`, first-write-wins). `POST
