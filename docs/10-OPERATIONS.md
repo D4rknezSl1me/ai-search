@@ -40,11 +40,20 @@
 
 ## 5. Alerting
 
-- Disk high-water mark (crawler auto-pauses; page the operator).
-- Social adapter error rate > threshold (adapter auto-disabled).
-- GPU OOM / service down / queue backlog growing unbounded.
-- Search latency P95 or error rate regression.
-- Local LLM saturation (query queue backing up / GPU contention with embedding jobs).
+**Implemented (Phase 4):** `deploy/alerts.yml` — Prometheus alerting rules, loaded via `rule_files`
+in `deploy/prometheus.yml` and mounted into the Prometheus container. They evaluate against the
+metrics the services already export and surface on the Prometheus `/alerts` page (Alertmanager
+routing/paging is deferred). Groups:
+- **service_health** — `CrawlerDown`, `AiApiDown` (critical), `BrowserWorkerDown` (warning), from `up`.
+- **crawl_health** — `HighFetchErrorRate`, `HighHTTP5xxRate` (target throttling), `HighHTTP4xxRate`
+  (anti-bot blocking), as ratios over `crawler_fetch_*` (NaN-safe: a quiet system never fires).
+- **pipeline_health** — `RenderQueueFailing`, `BrowserWorkerRenderFailing`,
+  `BrowserWorkerProxyPoolExhausted` (all proxies in cooldown), `IndexingBacklogGrowing`
+  (`aisearch_documents_pending > 1000`).
+- **discovery_health** — `SocialAdapterHighErrorRate` (per-adapter, likely blocked / API change).
+
+Still to add: disk high-water mark, GPU OOM / LLM saturation, search-latency P95 regression, and
+Alertmanager routing for actual paging.
 
 ## 6. Backups & recovery
 

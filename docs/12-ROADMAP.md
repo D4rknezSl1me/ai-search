@@ -174,8 +174,10 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   identical queries, bypassed for freshness-driven ranking so it never hides freshly-crawled content
   — cuts repeated embed/ANN/lexical/rerank work on the single-GPU box (docs/07 caching).
 - [~] Coverage/stats API ✅ crawler side (`GET /internal/coverage` → totals, by content-type/lang,
-  frontier-by-state, recrawl validators/eligibility via `store.CoverageStats`). Monitoring/alerts +
-  richer intelligence-plane coverage still to come.
+  frontier-by-state, recrawl validators/eligibility via `store.CoverageStats`) + intelligence-plane
+  `GET /v1/coverage` (resilient) with a UI panel. **Monitoring/alerts ✅** — `deploy/alerts.yml`
+  (11 Prometheus rules across service/crawl/pipeline/discovery health, wired via `rule_files` +
+  mounted). Alertmanager routing/paging still to come.
 - Auth, API keys, rate limiting, usage metering (multi-tenant readiness).
 - [x] **Index reconciliation** (`ai/app/reconcile.py` + `POST /internal/reconcile`): prune chunks
   orphaned in Qdrant/OpenSearch (index ≥ `n_chunks`) so re-indexing to fewer pieces can't leave

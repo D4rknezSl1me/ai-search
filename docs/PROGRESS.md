@@ -43,6 +43,38 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 4: Prometheus alerting rules (monitoring/alerts)
+
+**What** — `deploy/alerts.yml`: 11 Prometheus alerting rules across 4 groups, wired via `rule_files`
+in `deploy/prometheus.yml` and mounted into the Prometheus container (`deploy/docker-compose.yml`):
+- **service_health**: `CrawlerDown` / `AiApiDown` (critical) / `BrowserWorkerDown` (warning) from `up`.
+- **crawl_health**: `HighFetchErrorRate`, `HighHTTP5xxRate` (throttling), `HighHTTP4xxRate` (anti-bot
+  blocking) — ratios over `crawler_fetch_total` / `crawler_fetch_status_total`.
+- **pipeline_health**: `RenderQueueFailing`, `BrowserWorkerRenderFailing`,
+  `BrowserWorkerProxyPoolExhausted` (all proxies in cooldown), `IndexingBacklogGrowing`
+  (`aisearch_documents_pending > 1000`).
+- **discovery_health**: `SocialAdapterHighErrorRate` (per-adapter, `by (adapter)`).
+
+Every expr references a metric the services **actually export** (verified against
+`crawler/internal/metrics/metrics.go`, `browser-worker/src/metrics.ts`, `ai/app/main.py`), and ratio
+rules are NaN-safe so an idle system never false-fires (recall-first ops).
+
+**Why** — Phase 4 calls for monitoring/alerts; until now Prometheus scraped metrics but evaluated no
+rules, so a stuck crawl, a blocked social adapter, an exhausted proxy pool, or an indexing backlog
+had to be noticed by eye. These make the failure modes the anti-blocking/pipeline work already emits
+metrics for actually *surface* on the Prometheus `/alerts` page.
+
+**Verification** — Docker down this session, so promtool wasn't run (deferred); validated instead
+with Python: both YAMLs parse, 11 alerts across the 4 named groups, every rule has
+`expr`/`labels.severity∈{critical,warning}`/`annotations.summary+description`, and `prometheus.yml`
+`rule_files` points at the mounted path. `docs/10-OPERATIONS.md` §5 updated to describe the shipped
+rules; roadmap Phase 4 monitoring → ✅ (Alertmanager routing still deferred).
+
+**Next** — Alertmanager routing for paging, plus the remaining Phase 4 hardening (backups/runbooks
+tested, NER/media enrichment, vector quantization).
+
+---
+
 ## 2026-08-22 — Phase 5: coverage/status view (+ resilient /v1/coverage)
 
 **What**

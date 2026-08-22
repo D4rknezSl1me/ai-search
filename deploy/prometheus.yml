@@ -2,6 +2,11 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
+# Alerting rules (Phase 4). Alertmanager routing is deferred; rules still
+# evaluate and surface as PENDING/FIRING on the Prometheus /alerts page.
+rule_files:
+  - /etc/prometheus/alerts.yml
+
 scrape_configs:
   - job_name: prometheus
     static_configs:

@@ -1,0 +1,118 @@
+# Prometheus alerting rules for ai-search (Phase 4 — monitoring/alerts).
+#
+# References only metrics the services actually export:
+#   crawler        crawler_*            (crawler/internal/metrics/metrics.go)
+#   ai-api         aisearch_documents_* (ai/app/main.py /metrics)
+#   browser-worker browserworker_*      (browser-worker/src/metrics.ts)
+#
+# Ratio rules divide two rates; when the denominator is 0 the result is NaN and
+# the comparison is false, so a quiet system never fires a false alert
+# (recall-first ops: alert on real trouble, not on idleness).
+groups:
+  - name: service_health
+    rules:
+      - alert: CrawlerDown
+        expr: up{job="crawler"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Crawler is down"
+          description: "Prometheus can't scrape the crawler ({{ $labels.instance }}) for >2m."
+
+      - alert: AiApiDown
+        expr: up{job="ai-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "ai-api is down"
+          description: "Prometheus can't scrape ai-api ({{ $labels.instance }}) for >2m — search/discovery unavailable."
+
+      - alert: BrowserWorkerDown
+        expr: up{job="browser-worker"} == 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Browser worker is down"
+          description: "The Playwright render worker is unreachable for >10m; JS/social rendering is stalled."
+
+  - name: crawl_health
+    rules:
+      - alert: HighFetchErrorRate
+        expr: |
+          sum(rate(crawler_fetch_total{result="error"}[10m]))
+            / sum(rate(crawler_fetch_total[10m])) > 0.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Crawler fetch error rate >50%"
+          description: "Over half of fetch attempts are failing in the last 10m — check egress, DNS, or a bad campaign scope."
+
+      - alert: HighHTTP5xxRate
+        expr: |
+          sum(rate(crawler_fetch_status_total{class="5xx"}[10m]))
+            / sum(rate(crawler_fetch_status_total[10m])) > 0.3
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Crawler seeing >30% HTTP 5xx"
+          description: "Target servers are erroring or throttling (5xx) — consider backing off affected hosts."
+
+      - alert: HighHTTP4xxRate
+        expr: |
+          sum(rate(crawler_fetch_status_total{class="4xx"}[15m]))
+            / sum(rate(crawler_fetch_status_total[15m])) > 0.5
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Crawler seeing >50% HTTP 4xx"
+          description: "Many 4xx responses (403/404/429) — likely anti-bot blocking; review UA/proxy/pacing."
+
+  - name: pipeline_health
+    rules:
+      - alert: RenderQueueFailing
+        expr: |
+          sum(rate(crawler_render_queue_completed_total{result="failed"}[15m]))
+            / sum(rate(crawler_render_queue_completed_total[15m])) > 0.5
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Render queue majority-failing"
+          description: "Over half of render jobs are failing — the browser worker may be crashing or blocked."
+
+      - alert: BrowserWorkerRenderFailing
+        expr: |
+          sum(rate(browserworker_render_failed_total[15m]))
+            / sum(rate(browserworker_claimed_total[15m])) > 0.5
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Browser worker render failures >50%"
+          description: "Most claimed render jobs error out (navigation/timeout) — check the worker and proxies."
+
+      - alert: BrowserWorkerProxyPoolExhausted
+        expr: browserworker_proxy_healthy == 0 and browserworker_proxy_pool_size > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "All render proxies in cooldown"
+          description: "Every configured proxy is unhealthy for >5m; renders fall back to direct egress (block risk)."
+
+      - alert: IndexingBacklogGrowing
+        expr: aisearch_documents_pending > 1000
+        for: 20m
+        labels: { severity: warning }
+        annotations:
+          summary: "Indexing backlog >1000 docs"
+          description: "The chunk/embed/index pipeline is falling behind crawling ({{ $value }} pending) — check TEI/Qdrant/OpenSearch."
+
+  - name: discovery_health
+    rules:
+      - alert: SocialAdapterHighErrorRate
+        expr: |
+          sum by (adapter) (rate(crawler_social_fetch_total{result="error"}[15m]))
+            / sum by (adapter) (rate(crawler_social_fetch_total[15m])) > 0.5
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Social adapter {{ $labels.adapter }} >50% errors"
+          description: "The {{ $labels.adapter }} adapter is mostly failing for >15m — likely blocked or an API change."
