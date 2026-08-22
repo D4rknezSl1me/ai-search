@@ -241,7 +241,11 @@ framework (CLAUDE.md rule 2). Only the orchestration + entity-resolution intelli
   query → hybrid retrieval over the indexed corpus → extract candidates). A **live-discovery**
   adapter (`POST /internal/discover` → crawl new URLs → extract) for pages not yet indexed is next.
 - [ ] Per-run **lead frontier** (isolated, resumable) + explicit budget (`max_hops/fetches/wall_s`).
-- [ ] Eval extension: labeled solvable targets → *resolution* precision/recall + "found @ hop-k".
+- [x] **Resolution eval** (`ai/eval/resolution_eval.py` + `resolution_cases.jsonl`) — runs the real
+  loop over labeled synthetic corpora (target + distractors + noise) and reports resolution accuracy
+  / recall / resolved-rate / avg hops+fetches; **offline** (no stack), gated in CI by
+  `tests/test_resolution_eval.py`. Current shipped set: 5/5 resolved, accuracy = recall = 1.0. Live
+  targets over the real index build on this later.
 
 **Depends on:** P1 fetch/render pipeline, P2 retrieval/rerank, P3 social adapters + anti-detection
 (all done), P4 NER enrichment. **Credential-gated hops** wait on owner-supplied accounts

@@ -43,6 +43,36 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 6: resolution eval (measure whether the loop finds the *right* person)
+
+**What** — `ai/eval/resolution_eval.py` + `ai/eval/resolution_cases.jsonl`: an **offline** eval for
+the metric Phase 6 actually cares about — not "were relevant docs retrieved" (that's `run_eval.py`
+against the live stack) but "did the loop resolve the *correct* person." It runs the real
+`discover_entity` + retrieval-backed adapter over small **labeled synthetic corpora** (a corpus-
+backed `retrieve` simulates lexical retrieval by token overlap), so it needs no GPU/index/network.
+Reports `resolution_accuracy` (top candidate is the labeled target), `recall` (target appears among
+candidates), `resolved_rate`, and avg hops/fetches. CLI prints a per-case table + summary.
+- 5 shipped cases exercise the discriminating behaviors: sibling disambiguation between same-name
+  people, given-name inference, accent tolerance, **relationship beating a shared city**, and
+  handle-from-profile-URL.
+
+**Why** — "Measurable coverage" is a core principle (docs/00 §5); a self-resolving lookup is only
+trustworthy if its precision is *proven*, not asserted. Doing it offline over labeled corpora means
+every loop change (extraction, resolver weights, planner) is regression-gated in CI without standing
+the stack up — the same recall-first, evidence-first discipline as the rest of the project.
+
+**Verification** — `tests/test_resolution_eval.py` runs the shipped set and gates:
+`resolution_accuracy == recall == resolved_rate == 1.0`, avg_hops ≤ 3, every case a hit with
+best_score ≥ 0.6. Live run: `python eval/resolution_eval.py` → **5/5 [hit], resolved, score 1.0,
+1 hop each**. `ai/` offline suite **164 pass** (162 → 164). (Fixed cp1252 console: ASCII marks
+instead of ✓/✗; added an `ai/`-root `sys.path` bootstrap so the CLI runs standalone.) Roadmap Phase 6
+eval item → `[x]`.
+
+**Next** — the live-discovery search adapter (`POST /internal/discover` → crawl URLs not yet indexed
+→ extract) and a "targeted lookup" UI form — the two remaining Phase 6 items.
+
+---
+
 ## 2026-08-22 — Phase 6: LLM planner (the local model as reasoner over the deterministic backbone)
 
 **What** — `ai/app/entity_planner.py` + an injectable PLAN step in the orchestrator:
