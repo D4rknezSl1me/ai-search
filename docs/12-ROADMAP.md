@@ -197,7 +197,10 @@ operational runbooks + backups tested.
   re-run, persists across reloads). Plus the Phase-6 "Find a person" mode tab. All verified in a real
   browser (history persists, chip re-runs, console clean). Server-driven facet *counts* are a later
   add.
-- Coverage/status views; monitoring dashboards for clients.
+- [~] Coverage/status views — **client coverage panel done**: a footer "coverage" toggle loads
+  `GET /v1/coverage` (now degrades to `available:false` instead of 500 when Postgres is down) and
+  renders documents/indexed/chunks + top domains, or a graceful "datastores unavailable" note.
+  Verified in a real browser. Grafana-style monitoring dashboards for clients still to come.
 - Auth/onboarding; usage/billing views.
 
 **Exit criteria:** a client can self-serve search with cited answers and see coverage.

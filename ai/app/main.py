@@ -401,15 +401,22 @@ async def _planner_llm(messages: list[dict[str, str]], temperature: float) -> st
 
 @app.get("/v1/coverage")
 async def v1_coverage() -> dict:
-    pool = await clients.pg()
-    total_docs = await pool.fetchval("SELECT count(*) FROM documents")
-    indexed = await pool.fetchval("SELECT count(*) FROM documents WHERE n_chunks > 0")
-    total_chunks = await pool.fetchval("SELECT COALESCE(sum(n_chunks),0) FROM documents WHERE n_chunks > 0")
-    by_domain = await pool.fetch(
-        "SELECT s.host AS domain, count(*) AS docs FROM documents d "
-        "LEFT JOIN sources s ON s.id = d.source_id GROUP BY s.host ORDER BY docs DESC LIMIT 25"
-    )
+    """What's indexed (docs/chunks + top domains). Degrades to `available:false`
+    when Postgres is unreachable, so the UI can render a status instead of 500."""
+    try:
+        pool = await clients.pg()
+        total_docs = await pool.fetchval("SELECT count(*) FROM documents")
+        indexed = await pool.fetchval("SELECT count(*) FROM documents WHERE n_chunks > 0")
+        total_chunks = await pool.fetchval("SELECT COALESCE(sum(n_chunks),0) FROM documents WHERE n_chunks > 0")
+        by_domain = await pool.fetch(
+            "SELECT s.host AS domain, count(*) AS docs FROM documents d "
+            "LEFT JOIN sources s ON s.id = d.source_id GROUP BY s.host ORDER BY docs DESC LIMIT 25"
+        )
+    except Exception:
+        log.exception("coverage query failed (datastores down?)")
+        return {"available": False, "documents": 0, "documents_indexed": 0, "chunks": 0, "by_domain": []}
     return {
+        "available": True,
         "documents": total_docs,
         "documents_indexed": indexed,
         "chunks": int(total_chunks),

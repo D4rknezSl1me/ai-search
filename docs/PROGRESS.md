@@ -43,6 +43,32 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 5: coverage/status view (+ resilient /v1/coverage)
+
+**What**
+- **Backend hardening**: `GET /v1/coverage` now wraps its Postgres queries and returns
+  `{available:false, …zeros}` when the datastore is unreachable instead of a 500 (and `available:true`
+  on success) — so a client can always render a status.
+- **UI coverage panel**: a footer "coverage" toggle loads `/v1/coverage` on demand and renders
+  documents / indexed / chunks badges + top-domains chips, or a graceful "Datastores unavailable —
+  bring up Postgres…" note. No new deps; collapsible.
+
+**Why** — "Measurable coverage" is a core principle (docs/00 §5): a client needs to *see* what the
+system has indexed, and the answer surface should never hard-error just because a datastore is down.
+This gives the coverage-transparency the product promises, on the client side.
+
+**Verification** — 2 new tests (`tests/test_coverage_endpoint.py`): the pg-down path
+(`available:false`, zeros) and the happy path (fake pool → documents/indexed/chunks/top-domain
+shape). `ai/` offline suite **170 pass** (168 → 170). **Real-browser (Playwright)** against local
+uvicorn: `/v1/coverage` returned `available:false` (no datastores), and the footer "coverage" toggle
+rendered the panel with the graceful unavailable note; console clean. Roadmap Phase 5 coverage view →
+`[~]`.
+
+**Next** — remaining Phase 5 (auth/onboarding, client monitoring dashboards) and Phase 4 hardening
+(alerts, backups/runbooks, NER/media enrichment). Phase 6 feature-complete.
+
+---
+
 ## 2026-08-22 — Phase 5: search UI filters + recent-search history
 
 **What** — Rounded out the Search tab of the self-hosted UI (`ai/app/static/index.html`):

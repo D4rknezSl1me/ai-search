@@ -153,8 +153,9 @@
     <div id="meta" class="meta"></div>
   </div>
   <div id="sources"></div>
+  <div id="coveragePanel" class="card hidden"></div>
 
-  <footer>Fully self-hosted · local LLM · no paid APIs</footer>
+  <footer>Fully self-hosted · local LLM · no paid APIs · <span class="link" id="covToggle">coverage</span></footer>
 </div>
 
 <script>
@@ -292,6 +293,33 @@ function pushHistory(q){
   localStorage.setItem(HKEY, JSON.stringify(h)); renderHistory();
 }
 renderHistory();
+
+// ---- coverage panel: what's indexed (GET /v1/coverage) --------------------
+$('#covToggle').addEventListener('click', toggleCoverage);
+async function toggleCoverage(){
+  const p = $('#coveragePanel');
+  if(!p.classList.contains('hidden')){ p.classList.add('hidden'); return; }
+  p.classList.remove('hidden');
+  p.innerHTML = '<div class="status"><span class="dot"></span>Loading coverage…</div>';
+  try {
+    const r = await fetch('/v1/coverage'); renderCoverage(await r.json());
+  } catch(e){ p.innerHTML = '<div class="status">Coverage unavailable: ' + esc(''+e) + '</div>'; }
+}
+function renderCoverage(d){
+  const p = $('#coveragePanel');
+  if(!d || d.available === false){
+    p.innerHTML = '<h2 class="sec" style="margin-top:0">Coverage</h2>'
+      + '<div class="status">Datastores unavailable — bring up Postgres to see indexed coverage.</div>';
+    return;
+  }
+  const doms = (d.by_domain||[]).slice(0,12)
+    .map(x => `<span class="badge">${esc(x.domain||'—')} <b>${x.documents}</b></span>`).join(' ');
+  p.innerHTML = '<h2 class="sec" style="margin-top:0">Coverage</h2>'
+    + `<div class="meta"><span class="badge">documents <b>${d.documents}</b></span>`
+    + `<span class="badge">indexed <b>${d.documents_indexed}</b></span>`
+    + `<span class="badge">chunks <b>${d.chunks}</b></span></div>`
+    + (doms ? `<h2 class="sec">Top domains</h2><div class="meta">${doms}</div>` : '');
+}
 tabSearch.addEventListener('click', () => setMode(false));
 tabFind.addEventListener('click', () => setMode(true));
 
