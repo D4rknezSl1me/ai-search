@@ -64,14 +64,41 @@ async def ensure_opensearch_index() -> None:
         resp.raise_for_status()
 
 
+def qdrant_collection_body(
+    *,
+    dim: int | None = None,
+    distance: str = "Cosine",
+    quantization: bool | None = None,
+    quantile: float | None = None,
+    always_ram: bool | None = None,
+) -> dict:
+    """Build the Qdrant collection creation payload.
+
+    When quantization is on, attach scalar **int8** quantization: it stores a
+    ~4x-smaller quantized copy of each vector (optionally RAM-resident) while
+    keeping the originals for rescoring — density without a real recall hit
+    (docs/06). Defaults come from config; args let tests pin them.
+    """
+    dim = settings.embed_dim if dim is None else dim
+    quantization = settings.qdrant_quantization if quantization is None else quantization
+    body: dict = {"vectors": {"size": dim, "distance": distance}}
+    if quantization:
+        body["quantization_config"] = {
+            "scalar": {
+                "type": "int8",
+                "quantile": settings.qdrant_quantization_quantile if quantile is None else quantile,
+                "always_ram": settings.qdrant_quantization_always_ram if always_ram is None else always_ram,
+            }
+        }
+    return body
+
+
 async def ensure_qdrant_collection() -> None:
     base = f"{settings.qdrant_url}/collections/{settings.qdrant_collection}"
     resp = await http().get(base)
     if resp.status_code == 200:
         return
-    body = {
-        "vectors": {"size": settings.embed_dim, "distance": "Cosine"},
-    }
+    body = qdrant_collection_body()
     resp = await http().put(base, json=body)
     if resp.status_code >= 400:
         resp.raise_for_status()

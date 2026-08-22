@@ -43,6 +43,31 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 4: Qdrant vector quantization (config-gated, for density)
+
+**What** — Extracted the Qdrant collection payload into a pure `indexes.qdrant_collection_body()`
+and added **scalar int8 quantization** behind `QDRANT_QUANTIZATION` (off by default): when enabled,
+new collections get `quantization_config.scalar {type:int8, quantile, always_ram}`, storing a
+~4x-smaller quantized copy of each vector (optionally RAM-resident) while keeping the originals for
+rescoring — density with negligible recall impact. Knobs: `qdrant_quantization_quantile` (0.99),
+`qdrant_quantization_always_ram` (true); `.env.example` updated.
+
+**Why** — The Phase 4 "quantize vectors for density" item: on a single-GPU/limited-RAM box, int8
+quantization is the cheapest way to fit ~4x more vectors in memory as the corpus grows, and Qdrant's
+rescoring against the retained originals keeps precision. Gated off so existing deployments are
+untouched (it only affects *newly created* collections).
+
+**Verification** — 4 new tests (`tests/test_indexes.py`): payload with/without quantization, the
+int8 scalar block (type/quantile/always_ram), configurable distance, and config-default tracking.
+`ai/` offline suite **200 pass** (196 → 200); `app.indexes` imports clean. Live effect (a real
+quantized collection) applies when the GPU/Qdrant stack is next brought up with the flag on. Roadmap
+Phase 4 vector-quantization → done.
+
+**Next** — capacity-planning notes (disk/VRAM/throughput budgets) round out Phase 4 ops; Phase 5
+usage/billing dashboards. Phase 6 feature-complete.
+
+---
+
 ## 2026-08-22 — Phase 4: self-hosted backup script + restore runbook
 
 **What** — `deploy/backup.ps1`: one-command backup of the data-bearing stores to a timestamped

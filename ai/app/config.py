@@ -64,6 +64,12 @@ class Settings(BaseSettings):
     qdrant_collection: str = "chunks"
     opensearch_index: str = "chunks"
 
+    # --- Qdrant scalar quantization (density: int8 ~4x smaller vectors in RAM,
+    #     originals kept for rescoring). Off by default; applies to NEW collections. ---
+    qdrant_quantization: bool = False
+    qdrant_quantization_quantile: float = 0.99
+    qdrant_quantization_always_ram: bool = True
+
     # --- Chunking (structure-aware; see docs/05-EXTRACTION.md §7) ---
     chunk_target_chars: int = 1600   # ~400 tokens at ~4 chars/token
     chunk_overlap_chars: int = 200   # ~12% overlap
