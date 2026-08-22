@@ -19,7 +19,7 @@ import httpx
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
-from . import clients, indexer, indexes, reconcile
+from . import auth, clients, indexer, indexes, reconcile
 from .config import settings
 from .retrieval import Filters, retrieve
 from .schemas import (
@@ -55,6 +55,22 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ai-search AI service", version="0.2.0", lifespan=lifespan)
+
+# API-key auth + per-key rate limiting on /v1/* (off unless AUTH_ENABLED). The
+# decision logic lives in app.auth (pure/testable); this is a thin adapter.
+_auth_cfg = auth.AuthConfig(enabled=settings.auth_enabled, allowed_keys=auth.parse_keys(settings.api_keys))
+_rate_limiter = auth.RateLimiter(settings.rate_limit_per_min)
+
+
+@app.middleware("http")
+async def _auth_middleware(request, call_next):
+    if _auth_cfg.enabled:
+        key = auth.extract_key(request.headers)
+        rejection = auth.decide(request.url.path, key, cfg=_auth_cfg, limiter=_rate_limiter)
+        if rejection is not None:
+            status, reason = rejection
+            return JSONResponse(status_code=status, content={"error": reason})
+    return await call_next(request)
 
 
 def _filters(f) -> Filters:

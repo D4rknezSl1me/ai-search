@@ -55,6 +55,11 @@ class Settings(BaseSettings):
 
     ai_api_port: int = 8000
 
+    # --- API auth + rate limiting (off by default; multi-tenant readiness) ---
+    auth_enabled: bool = False
+    api_keys: str = ""              # comma-separated operator-issued keys
+    rate_limit_per_min: int = 60    # per-key token-bucket capacity/refill
+
     # --- Index names ---
     qdrant_collection: str = "chunks"
     opensearch_index: str = "chunks"

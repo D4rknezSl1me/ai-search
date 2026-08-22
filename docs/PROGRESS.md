@@ -43,6 +43,36 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 4: API-key auth + per-key rate limiting
+
+**What** — `ai/app/auth.py` + a thin `main.py` middleware (config-gated by `AUTH_ENABLED`, off by
+default):
+- **API-key auth** on `/v1/*` — a request must carry a known key via `X-API-Key` or `Authorization:
+  Bearer` (keys from `API_KEYS`, comma-separated). `/`, health/metrics, and `/internal/*` are exempt
+  so the UI and ops tooling keep working unauthenticated.
+- **Per-key rate limiting** — a token bucket (capacity = `RATE_LIMIT_PER_MIN`, continuous refill):
+  allows a short burst then settles to the per-minute rate; over-limit → `429`.
+- Decision logic is a pure function (`decide`) over injected config + limiter + `now`, so it's fully
+  unit-testable; the middleware is a 6-line adapter. New config `auth_enabled` / `api_keys` /
+  `rate_limit_per_min` (+ `.env.example`). Self-hosted, no external IdP (CLAUDE.md rule 2).
+
+**Why** — Multi-tenant readiness (a listed Phase 4 item): the product needs to gate and meter the
+public API before it faces clients, without disrupting local/dev (hence off by default and the UI
+exempt).
+
+**Verification** — 9 new tests (`tests/test_auth.py`): key parsing, header extraction (X-API-Key +
+Bearer, case-insensitive), token-bucket burst/refill/per-key isolation, and `decide` (disabled
+passthrough, `/v1` gating vs exempt paths, 401 on missing/bad key, 429 when the bucket drains).
+`ai/` offline suite **192 pass** (183 → 192). **Live** (uvicorn with `AUTH_ENABLED=true
+API_KEYS=testkey`): `/` + `/healthz` → 200 (exempt), `/v1/coverage` no/bad key → **401**, valid key
+via both `X-API-Key` and `Bearer` → **200**. Roadmap Phase 4 auth → `[~]` (usage metering still to
+come); `docs/13-API.md` documents the auth header.
+
+**Next** — usage metering / per-tenant quotas, plus remaining Phase 4 hardening (backups/runbooks,
+NER/media enrichment, vector quantization).
+
+---
+
 ## 2026-08-22 — Phase 4: query filter derivation (temporal phrase → date range)
 
 **What** — `ai/app/filters.py` (`derive_date_range`) parses an explicit temporal phrase from the

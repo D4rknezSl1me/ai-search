@@ -5,6 +5,11 @@ for implementation (Pydantic in Python, structs in Go). Illustrative; finalized 
 
 ## 1. Search API (public, Python/FastAPI)
 
+**Auth (optional, off by default).** When `AUTH_ENABLED=true`, every `/v1/*` request must carry a
+known API key via `X-API-Key: <key>` or `Authorization: Bearer <key>` (keys set in `API_KEYS`,
+comma-separated). Missing/invalid → `401`; over the per-key rate limit (`RATE_LIMIT_PER_MIN`,
+token bucket) → `429`. The UI (`/`), health/metrics, and internal admin endpoints are exempt.
+
 ### `POST /v1/search`
 Natural-language query → grounded, cited answer.
 
