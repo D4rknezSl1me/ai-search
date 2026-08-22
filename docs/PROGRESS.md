@@ -43,6 +43,32 @@ Reverse-chronological record of meaningful changes. Update this on every meaning
 
 ---
 
+## 2026-08-22 — Phase 4: query filter derivation (temporal phrase → date range)
+
+**What** — `ai/app/filters.py` (`derive_date_range`) parses an explicit temporal phrase from the
+query into `date_from`/`date_to`: two-sided ("between 2010 and 2015"), one-sided ("since 2019",
+"before 2000"), a single year ("in 2021" → full-year range), relative windows ("last 3 months",
+"past week", "today", "yesterday"), with a deliberate precedence (range > bound > single-year >
+relative). Wired into `retrieval.retrieve()` **before the cache key**, applied only when the caller
+supplied no date filter (an explicit API filter always wins). Completes the docs/07 §2 query-
+understanding surface: normalize + expand + decompose + intent + freshness + **filter derivation**.
+
+**Why** — Freshness *weighting* handles "recent", but an explicit "in 2019" or "before 2010" needs a
+hard range no amount of recency-blending can express. This lets a natural-language temporal
+constraint actually scope retrieval. Recall-first guards: fires only on explicit cues, years
+constrained to 19xx/20xx (so "top 100" / "1500 members" / "model 3" never read as dates), and never
+overrides a caller-set filter.
+
+**Verification** — 13 new tests (`tests/test_filters.py`) covering every pattern, precedence, and
+false-positive guards (non-temporal numbers, no-phrase → None), with an injected `now`. `ai/` offline
+suite **183 pass** (170 → 183); `app.retrieval` imports clean. Roadmap Phase 4 → filter derivation
+`[x]`.
+
+**Next** — remaining Phase 4 hardening (backups/runbooks tested, NER/media enrichment, vector
+quantization) and Phase 5 auth/onboarding. Phase 6 feature-complete.
+
+---
+
 ## 2026-08-22 — Phase 4: Prometheus alerting rules (monitoring/alerts)
 
 **What** — `deploy/alerts.yml`: 11 Prometheus alerting rules across 4 groups, wired via `rule_files`

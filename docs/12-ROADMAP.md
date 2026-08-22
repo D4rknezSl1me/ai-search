@@ -156,6 +156,12 @@ cooldown**, all verified in a real browser. **Phase 3 done.**
   is echoed on responses for observability and future hooks (filter derivation, per-intent tuning).
   Intent only nudges ranking — never filters or drops results (recall-first). **Query understanding
   (docs/07 §2) is now complete: normalize + expansion + decomposition + intent.**
+- [x] **Filter derivation** (`ai/app/filters.py`): infer an explicit date range from temporal
+  phrases in the query ("in 2019", "since 2020", "between 2010 and 2015", "last 3 months", "today")
+  → `date_from`/`date_to`, applied in `retrieve()` **only when the caller gave no date filter** (an
+  API filter always wins) and only on explicit cues with plausible 19xx/20xx years (so "top 100"
+  never reads as a date). Completes the docs/07 §2 query-understanding surface (normalize + expand +
+  decompose + intent + freshness + **filter derivation**).
 - [x] **Freshness-aware ranking** (`ai/app/freshness.py`): the `freshness=auto|fresh|any` request
   option (previously accepted but inert) now blends a recency weight — halving every
   `FRESHNESS_HALF_LIFE_DAYS` — into the ordering after rerank. `auto` nudges, `fresh` pulls hard,

@@ -12,13 +12,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from . import clients
 from .cache import TTLCache
 from .config import settings
 from .dedup import DedupIndex
+from .filters import derive_date_range
 from .freshness import apply_freshness
 from .intent import classify, resolve_freshness
 from .understand import QueryPlan, plan_query
@@ -358,6 +359,15 @@ async def retrieve(
     #    explicit user freshness always wins). Intent only nudges ranking.
     intent = classify(query)
     effective_freshness = resolve_freshness(freshness, intent)
+
+    # 0b. Filter derivation (docs/07 §2): honor an explicit temporal phrase
+    #     ("in 2019", "last week") as a date range — but only when the caller
+    #     supplied no date filter of its own (an API filter always wins).
+    if f.date_from is None and f.date_to is None:
+        dr = derive_date_range(query)
+        if dr:
+            f = replace(f, date_from=dr.date_from, date_to=dr.date_to)
+            log.info("derived date range from query: %s..%s", dr.date_from, dr.date_to)
 
     # Cache: memoize identical queries briefly, but never when ranking is
     # freshness-driven (fresh/news) — those must always see the newest content.
